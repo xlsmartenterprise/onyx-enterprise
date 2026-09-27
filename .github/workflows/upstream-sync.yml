@@ -1,0 +1,103 @@
+name: Sync upstream releases
+
+on:
+  schedule:
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-release-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out XLSMART branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          ref: xlsmart-main
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_GITHUB_TOKEN }}
+
+      - name: Select Python for reproducible asset generation
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Merge latest stable upstream release and open PR
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::Configure SYNC_GITHUB_TOKEN with contents, workflows, and pull-requests write access."
+            exit 1
+          fi
+
+          git config user.name "xlsmart-sync[bot]"
+          git config user.email "xlsmart-sync[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/onyx-dot-app/onyx.git
+          # Isolate upstream releases from the fork's own vX.Y.Z tags.
+          git fetch --no-tags --prune upstream '+refs/tags/v*:refs/tags/upstream/v*'
+
+          release=""
+          while IFS= read -r tag; do
+            if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              release="$tag"
+              break
+            fi
+          done < <(git tag --sort=-version:refname -l 'upstream/v*' | sed 's@^upstream/@@')
+          if [[ -z "$release" ]]; then
+            echo "::error::No stable vX.Y.Z upstream release found."
+            exit 1
+          fi
+          release_ref="refs/tags/upstream/$release"
+
+          # A fast-forward-only push keeps the mirror free of local commits.
+          git branch -f upstream-tracking "$release_ref"
+          git push origin upstream-tracking:upstream-tracking
+
+          if git merge-base --is-ancestor "$release_ref" HEAD; then
+            echo "Already includes $release."
+            exit 0
+          fi
+
+          branch="sync/$release"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            if [[ "$(gh pr list --state open --head "$branch" --base xlsmart-main --json number --jq 'length')" != "0" ]]; then
+              echo "An open PR already tracks $release."
+              exit 0
+            fi
+            echo "::error::Branch $branch already exists without an open PR; inspect it before retrying."
+            exit 1
+          fi
+
+          git switch -c "$branch"
+          if ! git merge --no-ff --no-edit "$release_ref"; then
+            git diff --name-only --diff-filter=U
+            echo "::error::Merge conflict in $branch. Resolve it locally and open a PR manually."
+            exit 1
+          fi
+
+          # Keep the asset dependency inside this checkout and install it only for a new release.
+          python3 -m venv .venv
+          PIP_NO_CACHE_DIR=1 .venv/bin/python -m pip install 'Pillow==12.3.0'
+          PATH="$PWD/.venv/bin:$PATH" bash scripts/apply_xlsmart_assets.sh
+          git add -u
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(branding): restore XLSMART assets after $release"
+          fi
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "::error::Brand asset script left untracked or uncommitted files."
+            exit 1
+          fi
+
+          git push -u origin "$branch"
+          gh pr create --head "$branch" --base xlsmart-main \
+            --title "chore(sync): merge upstream $release" \
+            --body "Merge upstream $release. Review branding, licensing, and dependency changes. Run CI and smoke tests before merging."
