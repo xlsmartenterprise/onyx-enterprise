@@ -14,7 +14,7 @@ export function useCustomFooterContent(): string {
   const settings = useSettings();
   return (
     settings.enterprise?.custom_lower_disclaimer_content ||
-    `[Onyx ${settings.version ?? "dev"}](https://www.onyx.app/) - ${APP_SLOGAN}`
+    `${settings.appName} ${settings.version ?? "dev"} - ${APP_SLOGAN}`
   );
 }
 

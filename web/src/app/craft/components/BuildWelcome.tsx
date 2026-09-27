@@ -66,21 +66,18 @@ export default function BuildWelcome({
       <div className="row-start-1 min-h-0 w-full flex flex-col items-center justify-end">
         <div className="w-full max-w-(--app-page-main-content-width)">
           <div className="flex flex-row items-center justify-between gap-4 pb-6">
-            {/* The wordmark's baseline sits ~79% down its box, so nudge it
-                down (~0.21 × size) to share craft's baseline. */}
+            {/* Align the product wordmark with the Craft label. */}
             <button
               type="button"
               className="flex flex-row items-baseline gap-2 select-none"
               onClick={handleWordmarkClick}
             >
-              <Logo onyxBranded size={28} className="translate-y-[6px]" />
+              <Logo size={28} className="translate-y-[6px]" />
               <Text
                 text05
                 style={{
                   fontFamily: "var(--font-kh-teka)",
                   fontWeight: 400,
-                  // Sized so the x-height matches the custom "onyx" logotype
-                  // (its x-height ≈ 0.595em vs KH Teka's 0.504em at size 28).
                   fontSize: "34px",
                   lineHeight: "1",
                   letterSpacing: "-0.02em",

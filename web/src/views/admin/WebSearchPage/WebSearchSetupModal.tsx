@@ -4,7 +4,7 @@ import { Formik, Form } from "formik";
 import { useTranslations } from "next-intl";
 import * as Yup from "yup";
 import { SvgArrowExchange, SvgSimpleLoader } from "@opal/icons";
-import { SvgOnyxLogo } from "@opal/logos";
+import { BrandLogo } from "@/lib/app/brand";
 import { Button } from "@opal/components";
 import { Modal } from "@opal/components";
 import { useModalClose } from "@opal/components";
@@ -219,7 +219,7 @@ export function WebSearchSetupModal({ state }: WebSearchSetupModalProps) {
               <Modal.Header
                 icon={icon}
                 moreIcon1={SvgArrowExchange}
-                moreIcon2={SvgOnyxLogo}
+                moreIcon2={BrandLogo}
                 title={
                   isEditing
                     ? t("setupModal.editHeader.title", {

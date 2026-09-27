@@ -2,6 +2,16 @@ export const IS_DEV = process.env.NODE_ENV === "development";
 
 export const HOST_URL = process.env.WEB_DOMAIN || "http://localhost:3000";
 
+export const DEFAULT_BRAND_NAME = "XLSMART Enterprise";
+export const DEFAULT_APP_NAME =
+  process.env.NEXT_PUBLIC_APP_NAME || DEFAULT_BRAND_NAME;
+
+export function resolveAppName(
+  applicationName: string | null | undefined
+): string {
+  return applicationName?.trim() || DEFAULT_APP_NAME;
+}
+
 export const INTERNAL_URL = process.env.INTERNAL_URL || "http://localhost:8080";
 
 // Documentation URLs

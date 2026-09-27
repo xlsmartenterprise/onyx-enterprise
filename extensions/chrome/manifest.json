@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Onyx",
+  "name": "XLSMART Enterprise",
   "version": "1.1",
-  "description": "Onyx lets you research, create, and automate with LLMs powered by your team's unique knowledge",
+  "description": "Search, create, and automate with XLSMART Enterprise and your team's knowledge",
   "permissions": [
     "sidePanel",
     "storage",
@@ -37,7 +37,7 @@
         "default": "Ctrl+Shift+O",
         "mac": "Command+Shift+O"
       },
-      "description": "Toggle Onyx New Tab Override"
+      "description": "Toggle XLSMART Enterprise New Tab Override"
     },
     "openSidePanel": {
       "suggested_key": {
@@ -45,14 +45,14 @@
         "windows": "Alt+O",
         "mac": "MacCtrl+O"
       },
-      "description": "Open Onyx Side Panel"
+      "description": "Open XLSMART Enterprise Side Panel"
     }
   },
   "side_panel": {
     "default_path": "src/pages/panel.html"
   },
   "omnibox": {
-    "keyword": "onyx"
+    "keyword": "xlsmart"
   },
   "content_scripts": [
     {

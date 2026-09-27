@@ -47,6 +47,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # https://github.com/vercel/next.js/discussions/14030
 # NOTE: if you add something here, make sure to add it to the runner as well
 
+ARG NEXT_PUBLIC_APP_NAME
+ENV NEXT_PUBLIC_APP_NAME=${NEXT_PUBLIC_APP_NAME}
 
 ARG NEXT_PUBLIC_THEME
 ENV NEXT_PUBLIC_THEME=${NEXT_PUBLIC_THEME}
@@ -135,6 +137,8 @@ COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 # Environment variables must be redefined at run time
 # NOTE: if you add something here, make sure to add it to the builder as well
 
+ARG NEXT_PUBLIC_APP_NAME
+ENV NEXT_PUBLIC_APP_NAME=${NEXT_PUBLIC_APP_NAME}
 
 # allow user to specify custom feedback options
 ARG NEXT_PUBLIC_THEME

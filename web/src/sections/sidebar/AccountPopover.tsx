@@ -33,7 +33,7 @@ import { useSettings } from "@/lib/settings/hooks";
 import UserAvatar from "@/refresh-components/avatars/UserAvatar";
 import SidebarTabSkeleton from "@/refresh-components/skeletons/SidebarTabSkeleton";
 import { useNotificationSummary } from "@/hooks/useNotifications";
-import { SvgOnyxLogo } from "@opal/logos";
+import { BrandLogo } from "@/lib/app/brand";
 import { markdown } from "@opal/utils";
 import { useTranslations } from "next-intl";
 
@@ -181,9 +181,9 @@ function SettingsPopover({
             variant="body"
             color="muted"
             orientation="reverse"
-            icon={SvgOnyxLogo}
+            icon={BrandLogo}
             title={markdown(
-              `[Onyx ${
+              `[${settings.appName} ${
                 settings.version ?? "dev"
               }](https://docs.onyx.app/changelog)`
             )}

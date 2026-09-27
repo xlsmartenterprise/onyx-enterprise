@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from onyx.auth.oauth_token_manager import ensure_offline_access_auth_params
 from onyx.cache.interface import CacheLockAcquisitionError
 from onyx.cache.locks import async_cache_shared_lock, cache_shared_lock
+from onyx.configs.constants import ONYX_DEFAULT_APPLICATION_NAME
 from onyx.db.engine.sql_engine import get_session_with_current_tenant
 from onyx.db.enums import MCPOAuthProviderMode
 from onyx.db.mcp import (
@@ -1070,7 +1071,7 @@ def make_oauth_provider(
         refresh_log_context=refresh_log_context,
         server_url=mcp_server.server_url,
         client_metadata=OAuthClientMetadata(
-            client_name=f"Onyx - {mcp_server.name}",
+            client_name=f"{ONYX_DEFAULT_APPLICATION_NAME} - {mcp_server.name}",
             redirect_uris=[AnyUrl(mcp_oauth_redirect_uri())],
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],

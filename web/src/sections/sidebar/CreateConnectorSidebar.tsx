@@ -9,7 +9,6 @@ import { Divider, SidebarTab } from "@opal/components";
 import { cn } from "@opal/utils";
 import { SvgX } from "@opal/icons";
 import { renderSidebarLogo } from "@/lib/sidebar/utils";
-import { useShowLogoWhenFolded } from "@/lib/sidebar/hooks";
 
 // Fixed height of each step row (px). A uniform row height lets the connecting
 // rail line up deterministically with every dot regardless of step count.
@@ -53,14 +52,13 @@ export function CreateConnectorSidebarShell({
   children,
 }: CreateConnectorSidebarShellProps) {
   const t = useTranslations("sidebar");
-  const showLogoWhenFolded = useShowLogoWhenFolded();
   const { folded } = useSidebarState();
 
   return (
     <SidebarLayouts.Root>
       <SidebarLayouts.Header
         renderAppLogo={renderSidebarLogo}
-        showLogoWhenFolded={showLogoWhenFolded}
+        showLogoWhenFolded
       />
 
       <SidebarLayouts.Body scrollKey="create-connector">

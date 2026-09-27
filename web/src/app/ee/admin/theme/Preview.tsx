@@ -7,8 +7,9 @@ import Text from "@/refresh-components/texts/Text";
 import Truncated from "@/refresh-components/texts/Truncated";
 import { ensureHrefProtocol } from "@/lib/utils";
 import { cn } from "@opal/utils";
-import { SvgOnyxLogo } from "@opal/logos";
+import { BrandLogo } from "@/lib/app/brand";
 import MinimalMarkdown from "@/components/chat/MinimalMarkdown";
+import { resolveAppName } from "@/lib/constants";
 
 const previewMarkdownComponents = {
   p: ({ children }) => (
@@ -58,17 +59,15 @@ export type PreviewHighlightTarget =
 
 function PreviewLogo({
   logoSrc,
-  forceOnyxIcon,
   size,
   className,
 }: {
   logoSrc?: string;
-  forceOnyxIcon?: boolean;
   size: number;
   className?: string;
 }) {
   const t = useTranslations("admin.theme");
-  return logoSrc && !forceOnyxIcon ? (
+  return logoSrc ? (
     <img
       src={logoSrc}
       alt={t("preview.logo.alt")}
@@ -80,7 +79,7 @@ function PreviewLogo({
       className={cn("shrink-0 rounded-full", className)}
     />
   ) : (
-    <SvgOnyxLogo size={size} className={cn("shrink-0", className)} />
+    <BrandLogo size={size} className={cn("shrink-0", className)} />
   );
 }
 
@@ -195,19 +194,12 @@ function PreviewStart({
             )}
           >
             {logoDisplayStyle !== "name_only" && (
-              <PreviewLogo
-                logoSrc={logoSrc}
-                size={16}
-                forceOnyxIcon={
-                  logoDisplayStyle === "logo_and_name" &&
-                  !applicationDisplayName
-                }
-              />
+              <PreviewLogo logoSrc={logoSrc} size={16} />
             )}
             {(logoDisplayStyle === "logo_and_name" ||
               logoDisplayStyle === "name_only") && (
               <Truncated mainUiAction text04 nowrap>
-                {applicationDisplayName || "Onyx"}
+                {resolveAppName(applicationDisplayName)}
               </Truncated>
             )}
           </div>

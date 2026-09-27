@@ -10,7 +10,7 @@ import { PageLoader } from "@opal/layouts";
 import { useWebSearchProviders } from "@/lib/webSearch/hooks";
 import { useCreateModal } from "@opal/components";
 import { SvgGlobe } from "@opal/icons";
-import { SvgOnyxLogo } from "@opal/logos";
+import { BrandLogo } from "@/lib/app/brand";
 import { MessageCard } from "@opal/components";
 import { ADMIN_ROUTES } from "@/lib/admin-routes";
 import {
@@ -520,7 +520,7 @@ export default function WebSearchPage() {
                       ContentLogo ? (
                         <ContentLogo size={16} />
                       ) : provider.provider_type === "onyx_web_crawler" ? (
-                        <SvgOnyxLogo size={16} />
+                        <BrandLogo size={16} />
                       ) : (
                         <SvgGlobe size={16} />
                       )

@@ -206,7 +206,7 @@ function PreApprovalRow({ option, checked, onToggle }: PreApprovalRowProps) {
           className="flex w-full cursor-pointer items-center gap-3"
           htmlFor={checkboxId}
         >
-          <Logo className="w-8 h-8" />
+          <Logo size={32} className="shrink-0" />
           <div className="flex-1 flex flex-col gap-1 min-w-0">
             <Text font="main-ui-action">{option.name}</Text>
             <Text id={statusId} font="secondary-body" color="text-03">

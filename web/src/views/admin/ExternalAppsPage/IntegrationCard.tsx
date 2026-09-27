@@ -67,7 +67,7 @@ export default function IntegrationCard({ integration }: IntegrationCardProps) {
               !enabled && "opacity-60"
             )}
           >
-            <Logo className="w-8 h-8 shrink-0" />
+            <Logo size={32} className="shrink-0" />
             <div className="flex-1 min-w-0 flex flex-col gap-0.5">
               <div className="flex items-center gap-2">
                 <Text font="main-ui-action">{name}</Text>

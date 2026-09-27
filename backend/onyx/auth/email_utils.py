@@ -165,7 +165,7 @@ def build_html_email(
     cta_link: str | None = None,
 ) -> str:
     community_link_fragment = ""
-    if application_name == ONYX_DEFAULT_APPLICATION_NAME:
+    if application_name == "Onyx":
         community_link_fragment = f'<br>Have questions? Join our Discord community <a href="{ONYX_DISCORD_URL}">here</a>.'
 
     if cta_text and cta_link:

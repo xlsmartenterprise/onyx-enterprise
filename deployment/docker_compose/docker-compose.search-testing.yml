@@ -98,6 +98,7 @@ services:
       context: ../../web
       dockerfile: Dockerfile
       args:
+        - NEXT_PUBLIC_APP_NAME=${NEXT_PUBLIC_APP_NAME:-XLSMART Enterprise}
         - NEXT_PUBLIC_DISABLE_LOGOUT=${NEXT_PUBLIC_DISABLE_LOGOUT:-}
 
         # Enterprise Edition only

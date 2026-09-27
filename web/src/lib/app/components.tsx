@@ -3,37 +3,28 @@
 import { useTranslations } from "next-intl";
 import { useSettings } from "@/lib/settings/hooks";
 import {
+  DEFAULT_APP_NAME,
+  DEFAULT_BRAND_NAME,
   DEFAULT_LOGO_SIZE_PX,
   NEXT_PUBLIC_DO_NOT_USE_TOGGLE_OFF_DANSWER_POWERED,
 } from "@/lib/constants";
 import { cn } from "@opal/utils";
 import Text from "@/refresh-components/texts/Text";
 import Truncated from "@/refresh-components/texts/Truncated";
-import { SvgOnyxLogo, SvgOnyxLogoTyped } from "@opal/logos";
+import { BrandLogo, BrandWordmark } from "@/lib/app/brand";
 
 export interface LogoProps {
   folded?: boolean;
   size?: number;
   className?: string;
-  // Always render the real Onyx logo, ignoring enterprise white-label settings
-  // (custom logo / application name). Used by Onyx-branded surfaces like Craft.
-  onyxBranded?: boolean;
 }
 
-export function Logo({ folded, size, className, onyxBranded }: LogoProps) {
+export function Logo({ folded, size, className }: LogoProps) {
   const t = useTranslations("common");
   const resolvedSize = size ?? DEFAULT_LOGO_SIZE_PX;
-  const { enterprise, logoUrl } = useSettings();
+  const { enterprise, logoUrl, appName } = useSettings();
   const logoDisplayStyle = enterprise?.logo_display_style;
-  const applicationName = enterprise?.application_name;
-
-  if (onyxBranded) {
-    return folded ? (
-      <SvgOnyxLogo size={resolvedSize} className={cn("shrink-0", className)} />
-    ) : (
-      <SvgOnyxLogoTyped size={resolvedSize} className={className} />
-    );
-  }
+  const applicationName = enterprise?.application_name?.trim();
 
   const logo = logoUrl ? (
     <div
@@ -51,7 +42,7 @@ export function Logo({ folded, size, className, onyxBranded }: LogoProps) {
       />
     </div>
   ) : (
-    <SvgOnyxLogo size={resolvedSize} className={cn("shrink-0", className)} />
+    <BrandLogo size={resolvedSize} className={cn("shrink-0", className)} />
   );
 
   const renderNameAndPoweredBy = (opts: {
@@ -65,7 +56,7 @@ export function Logo({ folded, size, className, onyxBranded }: LogoProps) {
           /* H3 text is 4px larger (28px) than the Logo icon (24px), so negative margin hack. */
           <div className="flex flex-1 flex-col -mt-0.5">
             {opts.includeName && (
-              <Truncated headingH3>{applicationName}</Truncated>
+              <Truncated headingH3>{appName}</Truncated>
             )}
             {!NEXT_PUBLIC_DO_NOT_USE_TOGGLE_OFF_DANSWER_POWERED &&
               !enterprise?.hide_onyx_branding && (
@@ -91,15 +82,17 @@ export function Logo({ folded, size, className, onyxBranded }: LogoProps) {
 
   // Handle "name_only" display style
   if (logoDisplayStyle === "name_only") {
-    return renderNameAndPoweredBy({ includeLogo: false, includeName: true });
+    return folded
+      ? logo
+      : renderNameAndPoweredBy({ includeLogo: false, includeName: true });
   }
 
   // Handle "logo_and_name" or default behavior
-  return applicationName ? (
+  return applicationName || logoUrl || DEFAULT_APP_NAME !== DEFAULT_BRAND_NAME ? (
     renderNameAndPoweredBy({ includeLogo: true, includeName: true })
   ) : folded ? (
-    <SvgOnyxLogo size={resolvedSize} className={cn("shrink-0", className)} />
+    logo
   ) : (
-    <SvgOnyxLogoTyped size={resolvedSize} className={className} />
+    <BrandWordmark size={resolvedSize} className={className} />
   );
 }

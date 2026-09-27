@@ -83,8 +83,8 @@ async function toggleNewTabOverride() {
 
     chrome.notifications.create({
       type: "basic",
-      iconUrl: "icon.png",
-      title: "Onyx New Tab",
+      iconUrl: "public/icon128.png",
+      title: "XLSMART Enterprise New Tab",
       message: `New Tab Override ${newValue ? "enabled" : "disabled"}`,
     });
 
@@ -274,7 +274,7 @@ chrome.windows.onRemoved.addListener((windowId) => {
 });
 
 chrome.omnibox.setDefaultSuggestion({
-  description: 'Search Onyx for "%s"',
+  description: 'Search XLSMART Enterprise for "%s"',
 });
 
 chrome.omnibox.onInputEntered.addListener(async (text) => {
@@ -297,7 +297,7 @@ chrome.omnibox.onInputChanged.addListener((text, suggest) => {
     suggest([
       {
         content: text,
-        description: `Search Onyx for "<match>${text}</match>"`,
+        description: `Search XLSMART Enterprise for "<match>${text}</match>"`,
       },
     ]);
   }
