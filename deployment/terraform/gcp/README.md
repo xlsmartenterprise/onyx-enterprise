@@ -15,22 +15,14 @@ This is an **isolated, billable production-readiness test design**, not a produc
 
 Use Terraform >=1.5, `gcloud`, `kubectl`, Helm 3 and access to the project. ADC should reference an authorized credential file; do **not** copy it into this repository or the image build context. The operator's network CIDR must be able to reach the GKE public control plane. Overlapping VPC/VPN/CIDR ranges must be changed in `infra/variables.tf` inputs before applying. Examples below assume commands run from repository root, `PROJECT=internal-tech-tools-enterprise` and an approved `<YOUR_PUBLIC_IP>/32`.
 
-A separate bootstrap stack creates `internal-tech-tools-enterprise-322861197394-onyx-tfstate` with **temporary local state** (ignored by Git). After the one-time bootstrap, copy `bootstrap/state-backend.tf.example` to `bootstrap/state-backend.tf` and migrate state into that bucket; preserve the local state until migration succeeds. On every fresh checkout after migration, restore this backend file **before** running a bootstrap plan (or it would incorrectly plan another bucket). The GCS backend uses generation-based locking and object versioning. Do not apply two environments against the same `prefix`.
+The protected state bucket `internal-tech-tools-enterprise-322861197394-onyx-tfstate` has already been created by `bootstrap/`, and its state migrated to GCS. Both stacks pin their own distinct GCS prefixes in tracked backend configuration. The GCS backend uses generation-based locking and object versioning. On a fresh checkout, **do not run bootstrap with local state**: initialize its tracked backend and confirm `terraform state list` contains `google_storage_bucket.terraform_state` before planning it. If restoring from loss of the state bucket itself, temporarily remove `bootstrap/backend.tf` from Terraform's load path, recreate the bucket with local state, then restore the backend file and `terraform init -migrate-state`; preserve the local state until migration succeeds.
 
 ```sh
 export PROJECT=internal-tech-tools-enterprise
 export GOOGLE_APPLICATION_CREDENTIALS=/home/workspace/.config/gcloud/application_default_credentials.json
 terraform -chdir=deployment/terraform/gcp/bootstrap init
-terraform -chdir=deployment/terraform/gcp/bootstrap plan
-terraform -chdir=deployment/terraform/gcp/bootstrap apply
-cp deployment/terraform/gcp/bootstrap/state-backend.tf.example \
-  deployment/terraform/gcp/bootstrap/state-backend.tf
-terraform -chdir=deployment/terraform/gcp/bootstrap init -migrate-state \
-  -backend-config="bucket=${PROJECT}-322861197394-onyx-tfstate" \
-  -backend-config=prefix=onyx/bootstrap
-terraform -chdir=deployment/terraform/gcp/infra init \
-  -backend-config="bucket=${PROJECT}-322861197394-onyx-tfstate" \
-  -backend-config=prefix=onyx/staging
+terraform -chdir=deployment/terraform/gcp/bootstrap state list
+terraform -chdir=deployment/terraform/gcp/infra init
 terraform -chdir=deployment/terraform/gcp/infra plan -var='admin_cidrs=["<YOUR_PUBLIC_IP>/32"]'
 # Only after reviewing spend, IAM and 0 deletes:
 terraform -chdir=deployment/terraform/gcp/infra apply -var='admin_cidrs=["<YOUR_PUBLIC_IP>/32"]'

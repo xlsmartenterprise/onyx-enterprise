@@ -7,9 +7,6 @@ terraform {
       version = ">= 7.0, < 8.0"
     }
   }
-
-  # Local state is temporary until this bucket exists. After apply, copy
-  # state-backend.tf.example into place and migrate with terraform init.
 }
 
 provider "google" {
