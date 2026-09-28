@@ -22,12 +22,20 @@ resource "google_project_service" "required" {
   disable_on_destroy = false
 }
 
+# Separate from the legacy API set: adding an entry to that for_each defers the
+# pinned PSA module's network data lookup and plans to replace live SQL peering.
+resource "google_project_service" "vertex_ai" {
+  project            = var.project_id
+  service            = "aiplatform.googleapis.com"
+  disable_on_destroy = false
+}
+
 resource "google_compute_network" "onyx" {
   project                 = var.project_id
   name                    = "onyx-staging-vpc"
   auto_create_subnetworks = false
   routing_mode            = "REGIONAL"
-  depends_on              = [google_project_service.required]
+  depends_on              = [google_project_service.required["compute.googleapis.com"]]
 }
 
 resource "google_compute_subnetwork" "private" {
@@ -83,5 +91,5 @@ module "private_service_access" {
   address       = var.private_services_cidr
   prefix_length = 16
 
-  depends_on = [google_project_service.required, google_compute_network.onyx]
+  depends_on = [google_project_service.required["servicenetworking.googleapis.com"], google_compute_network.onyx]
 }

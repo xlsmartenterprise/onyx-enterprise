@@ -1,6 +1,6 @@
 # Helm chart 0.8.28, release onyx, namespace onyx. Infrastructure-specific
-# hosts/bucket/GSA and three branded image digests are required at install time;
-# see README.md. This file intentionally contains no credentials or mutable tags.
+# hosts/bucket/GSA and two branded image digests are required at install time;
+# see README.md. Models run in Vertex AI, not on local model-server pods.
 # Do not merge with values-lite.yaml or values-ci.yaml.
 
 global:
@@ -125,35 +125,11 @@ webserver:
       port: http
     periodSeconds: 30
 
-# Full indexing/search path: model serving, beat, all connector/indexing workers.
+# Both embedding and Gemini generation use Vertex AI via Workload Identity.
 inferenceCapability:
-  replicaCount: 2
-  affinity:
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              app: inference-model-server
-          topologyKey: topology.kubernetes.io/zone
-  readinessProbe:
-    httpGet:
-      path: /health
-      port: model-server
-    periodSeconds: 15
+  replicaCount: 0
 indexCapability:
-  replicaCount: 2
-  affinity:
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              app: indexing-model-server
-          topologyKey: topology.kubernetes.io/zone
-  readinessProbe:
-    httpGet:
-      path: /health
-      port: model-server
-    periodSeconds: 15
+  replicaCount: 0
 celery_beat:
   replicaCount: 1
 celery_worker_primary:
@@ -215,6 +191,11 @@ configMap:
   AUTH_TYPE: basic
   # No DEV_MODE / test login; USER_AUTH_SECRET comes from Secret Manager.
   POSTGRES_DB: onyx
+  DISABLE_MODEL_SERVER: "true"
+  VERTEXAI_DEFAULT_PROJECT: internal-tech-tools-enterprise
+  VERTEXAI_DEFAULT_LOCATION: global
+  GOOGLE_CLOUD_PROJECT: internal-tech-tools-enterprise
+  GOOGLE_CLOUD_LOCATION: global
   POSTGRES_PORT: "5432"
   FILE_STORE_BACKEND: gcs
   # GCS_FILE_STORE_BUCKET_NAME, GCS_PROJECT_ID and private POSTGRES_HOST,

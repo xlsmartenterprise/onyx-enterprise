@@ -88,10 +88,139 @@ def _build_google_embed_response(
 
 
 @pytest.mark.asyncio
-async def test_vertex_embed_keeps_task_type_for_existing_models(
+async def test_vertex_embed_uses_adc_project_and_location(
+    monkeypatch: pytest.MonkeyPatch,
     sample_embeddings: list[list[float]],
 ) -> None:
-    """Existing Vertex models continue to receive task_type and unmodified text."""
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "workload-project")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "global")
+
+    with (
+        patch(
+            "google.oauth2.service_account.Credentials.from_service_account_info"
+        ) as mock_credentials,
+        patch("google.genai.Client") as mock_genai_client,
+        patch(
+            "onyx.natural_language_processing.search_nlp_models.get_tokenizer",
+            return_value=MagicMock(),
+        ),
+    ):
+        mock_client = MagicMock()
+        mock_client.aio.models.embed_content = AsyncMock(
+            return_value=_build_google_embed_response(sample_embeddings[:1])
+        )
+        mock_client.aio.aclose = AsyncMock()
+        mock_genai_client.return_value = mock_client
+
+        model = EmbeddingModel(
+            server_host="localhost",
+            server_port=9000,
+            model_name="gemini-embedding-001",
+            normalize=True,
+            query_prefix=None,
+            passage_prefix=None,
+            api_key=None,
+            api_url=None,
+            provider_type=EmbeddingProvider.GOOGLE,
+        )
+        response = await model._make_direct_api_call(
+            EmbedRequest(
+                texts=["hello world"],
+                model_name="gemini-embedding-001",
+                max_context_length=2048,
+                normalize_embeddings=True,
+                text_type=EmbedTextType.QUERY,
+            )
+        )
+
+        assert response.embeddings == sample_embeddings[:1]
+        mock_credentials.assert_not_called()
+        mock_genai_client.assert_called_once_with(
+            vertexai=True, project="workload-project", location="global"
+        )
+        embed_call = mock_client.aio.models.embed_content.await_args
+        assert embed_call is not None
+        assert embed_call.kwargs["model"] == "gemini-embedding-001"
+        assert embed_call.kwargs["contents"][0].parts[0].text == "hello world"
+        assert embed_call.kwargs["config"].task_type == "RETRIEVAL_QUERY"
+
+
+@pytest.mark.asyncio
+async def test_vertex_adc_requires_explicit_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    with pytest.raises(ValueError, match="GOOGLE_CLOUD_PROJECT"):
+        CloudEmbedding(None, EmbeddingProvider.GOOGLE)
+
+    with patch(
+        "onyx.natural_language_processing.search_nlp_models.get_tokenizer",
+        return_value=MagicMock(),
+    ):
+        model = EmbeddingModel(
+            server_host="localhost",
+            server_port=9000,
+            model_name="gemini-embedding-001",
+            normalize=True,
+            query_prefix=None,
+            passage_prefix=None,
+            api_key=None,
+            api_url=None,
+            provider_type=EmbeddingProvider.GOOGLE,
+        )
+    with pytest.raises(ValueError, match="GOOGLE_CLOUD_PROJECT"):
+        await model._make_direct_api_call(
+            EmbedRequest(
+                texts=["hello world"],
+                max_context_length=2048,
+                normalize_embeddings=True,
+                text_type=EmbedTextType.QUERY,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_missing_other_provider_key_does_not_use_adc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "workload-project")
+    with pytest.raises(ValueError, match="API key is required"):
+        CloudEmbedding(None, EmbeddingProvider.OPENAI)
+
+    with patch(
+        "onyx.natural_language_processing.search_nlp_models.get_tokenizer",
+        return_value=MagicMock(),
+    ):
+        model = EmbeddingModel(
+            server_host="localhost",
+            server_port=9000,
+            model_name="text-embedding-3-small",
+            normalize=True,
+            query_prefix=None,
+            passage_prefix=None,
+            api_key=None,
+            api_url=None,
+            provider_type=EmbeddingProvider.OPENAI,
+        )
+    with pytest.raises(RuntimeError, match="API key not provided for cloud model"):
+        await model._make_direct_api_call(
+            EmbedRequest(
+                texts=["hello world"],
+                max_context_length=2048,
+                normalize_embeddings=True,
+                text_type=EmbedTextType.QUERY,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_vertex_embed_keeps_task_type_for_existing_models(
+    sample_embeddings: list[list[float]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Service-account projects and locations override ADC environment settings."""
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "workload-project")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "global")
     with patch(
         "google.oauth2.service_account.Credentials.from_service_account_info"
     ) as mock_credentials:
@@ -106,7 +235,7 @@ async def test_vertex_embed_keeps_task_type_for_existing_models(
             mock_genai_client.return_value = mock_client
 
             embedding = CloudEmbedding(
-                '{"project_id":"test-project"}',
+                '{"project_id":"test-project","location":"us-central1"}',
                 EmbeddingProvider.GOOGLE,
             )
             try:
@@ -120,6 +249,13 @@ async def test_vertex_embed_keeps_task_type_for_existing_models(
                 await embedding.aclose()
 
             assert result == sample_embeddings[:1]
+            mock_credentials.assert_called_once()
+            mock_genai_client.assert_called_once_with(
+                vertexai=True,
+                project="test-project",
+                location="us-central1",
+                credentials=mock_credentials.return_value,
+            )
 
             embed_call = mock_client.aio.models.embed_content.await_args
             assert embed_call is not None

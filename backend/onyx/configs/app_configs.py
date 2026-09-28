@@ -2126,6 +2126,9 @@ ANTHROPIC_DEFAULT_API_KEY = os.environ.get("ANTHROPIC_DEFAULT_API_KEY")
 COHERE_DEFAULT_API_KEY = os.environ.get("COHERE_DEFAULT_API_KEY")
 VERTEXAI_DEFAULT_CREDENTIALS = os.environ.get("VERTEXAI_DEFAULT_CREDENTIALS")
 VERTEXAI_DEFAULT_LOCATION = os.environ.get("VERTEXAI_DEFAULT_LOCATION", "global")
+# Opt-in self-hosted bootstrap for Vertex AI via Application Default Credentials.
+# Unlike VERTEXAI_DEFAULT_CREDENTIALS this is a project ID, not a credential blob.
+VERTEXAI_DEFAULT_PROJECT = os.environ.get("VERTEXAI_DEFAULT_PROJECT") or None
 OPENROUTER_DEFAULT_API_KEY = os.environ.get("OPENROUTER_DEFAULT_API_KEY")
 # Whether tenant provisioning auto-creates LLMProvider rows seeded with the
 # *_DEFAULT_API_KEY env vars above. Defaults to True so self-hosted

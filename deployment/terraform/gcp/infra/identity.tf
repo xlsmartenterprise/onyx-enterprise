@@ -24,6 +24,23 @@ resource "google_service_account_iam_member" "eso_workload_identity" {
   member             = "serviceAccount:${var.project_id}.svc.id.goog[external-secrets/external-secrets]"
 }
 
+# Vertex Gemini and Google embeddings need prediction only; the runtime
+# service account must not manage models, datasets, endpoints or credentials.
+resource "google_project_iam_custom_role" "vertex_predict" {
+  project     = var.project_id
+  role_id     = "onyxStagingVertexPredict"
+  title       = "Onyx staging Vertex inference"
+  description = "Predict with publisher models from the Onyx staging runtime"
+  permissions = ["aiplatform.endpoints.predict"]
+  depends_on  = [google_project_service.vertex_ai]
+}
+
+resource "google_project_iam_member" "runtime_vertex_predict" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.vertex_predict.id
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 resource "google_storage_bucket_iam_member" "runtime_objects" {
   bucket = google_storage_bucket.files.name
   role   = "roles/storage.objectAdmin"

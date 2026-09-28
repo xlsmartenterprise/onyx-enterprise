@@ -1,5 +1,8 @@
+import os
 import time
 
+from sqlalchemy import exists, select, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
 from onyx.configs.app_configs import (
@@ -10,13 +13,25 @@ from onyx.configs.app_configs import (
     MANAGED_VESPA,
     ONYX_DISABLE_VESPA,
     VESPA_NUM_ATTEMPTS_ON_STARTUP,
+    VERTEXAI_DEFAULT_LOCATION,
+    VERTEXAI_DEFAULT_PROJECT,
 )
 from onyx.configs.constants import KV_REINDEX_KEY
 from onyx.configs.embedding_configs import (
     SUPPORTED_EMBEDDING_MODELS,
     SupportedEmbeddingModel,
 )
-from onyx.configs.model_configs import GEN_AI_API_KEY, GEN_AI_MODEL_VERSION
+from onyx.configs.model_configs import (
+    ASYM_PASSAGE_PREFIX,
+    ASYM_QUERY_PREFIX,
+    DOC_EMBEDDING_DIM,
+    DOCUMENT_ENCODER_MODEL,
+    GEN_AI_API_KEY,
+    GEN_AI_MODEL_VERSION,
+    NORMALIZE_EMBEDDINGS,
+    OLD_DEFAULT_DOCUMENT_ENCODER_MODEL,
+    OLD_DEFAULT_MODEL_DOC_EMBEDDING_DIM,
+)
 from onyx.context.search.models import SavedSearchSettings
 from onyx.db.connector import check_connectors_exist, create_initial_default_connector
 from onyx.db.connector_credential_pair import (
@@ -33,12 +48,16 @@ from onyx.db.index_attempt import (
 )
 from onyx.db.llm import (
     fetch_default_llm_model,
+    fetch_embedding_provider,
     fetch_existing_llm_provider,
     update_default_provider,
+    upsert_cloud_embedding_provider,
     upsert_llm_provider,
 )
+from onyx.db.models import IndexAttempt, IndexModelStatus, LLMProvider
 from onyx.db.search_settings import (
     get_active_search_settings,
+    get_all_search_settings,
     get_current_search_settings,
     update_current_search_settings,
 )
@@ -58,11 +77,19 @@ from onyx.indexing.models import IndexingSetting
 from onyx.key_value_store.factory import get_kv_store
 from onyx.key_value_store.interface import KvKeyNotFoundError
 from onyx.llm.constants import LlmProviderNames
+from onyx.llm.well_known_providers.constants import (
+    VERTEX_AUTH_METHOD_KWARG,
+    VERTEX_AUTH_METHOD_WORKLOAD_IDENTITY,
+    VERTEX_LOCATION_KWARG,
+    VERTEX_PROJECT_KWARG,
+)
 from onyx.llm.well_known_providers.llm_provider_options import get_openai_model_names
 from onyx.natural_language_processing.search_nlp_models import (
     EmbeddingModel,
+    clean_model_name,
     warm_up_bi_encoder,
 )
+from onyx.server.manage.embedding.models import CloudEmbeddingProviderCreationRequest
 from onyx.server.manage.llm.models import (
     LLMProviderUpsertRequest,
     ModelConfigurationUpsertRequest,
@@ -80,8 +107,150 @@ from shared_configs.configs import (
     MODEL_SERVER_PORT,
     MULTI_TENANT,
 )
+from shared_configs.enums import EmbeddingProvider
 
 logger = setup_logger()
+
+_VERTEX_BOOTSTRAP_LOCK = (0x4F4E5958, 0x56455254)
+_GOOGLE_EMBEDDING_MODEL = "google/gemini-embedding-001"
+_VERTEX_CHAT_MODEL = "gemini-3.8-flash"
+
+
+def _seed_google_embeddings(db_session: Session, project: str) -> None:
+    """Replace only the untouched migration rows, before any index is started."""
+    search_settings = get_all_search_settings(db_session)
+    primary = next(
+        (row for row in search_settings if row.status == IndexModelStatus.PRESENT),
+        None,
+    )
+    future = next(
+        (row for row in search_settings if row.status == IndexModelStatus.FUTURE),
+        None,
+    )
+    if (
+        len(search_settings) != 2
+        or primary is None
+        or future is None
+        or primary.model_name != OLD_DEFAULT_DOCUMENT_ENCODER_MODEL
+        or primary.model_dim != OLD_DEFAULT_MODEL_DOC_EMBEDDING_DIM
+        or primary.index_name != "danswer_chunk"
+        or primary.normalize
+        or primary.query_prefix
+        or primary.passage_prefix
+        or primary.provider_type is not None
+        or primary.embedding_precision != EmbeddingPrecision.FLOAT
+        or primary.reduced_dimension is not None
+        or primary.enable_contextual_rag
+        or future.model_name != DOCUMENT_ENCODER_MODEL
+        or future.model_dim != DOC_EMBEDDING_DIM
+        or future.index_name != f"danswer_chunk_{clean_model_name(DOCUMENT_ENCODER_MODEL)}"
+        or future.normalize != NORMALIZE_EMBEDDINGS
+        or future.query_prefix != ASYM_QUERY_PREFIX
+        or future.passage_prefix != ASYM_PASSAGE_PREFIX
+        or future.provider_type is not None
+        or future.reduced_dimension is not None
+        or future.embedding_precision != EmbeddingPrecision.FLOAT
+        or future.enable_contextual_rag
+        or check_docs_exist(db_session)
+        or check_connectors_exist(db_session)
+        or db_session.scalar(select(exists().select_from(IndexAttempt)))
+        or fetch_embedding_provider(db_session, EmbeddingProvider.GOOGLE) is not None
+    ):
+        return
+
+    cloud_project = os.environ.get("GOOGLE_CLOUD_PROJECT", "").strip()
+    cloud_location = os.environ.get("GOOGLE_CLOUD_LOCATION") or "global"
+    if cloud_project != project or cloud_location != VERTEXAI_DEFAULT_LOCATION:
+        raise ValueError(
+            "GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION must match "
+            "VERTEXAI_DEFAULT_PROJECT and VERTEXAI_DEFAULT_LOCATION for ADC embeddings"
+        )
+
+    model = next(
+        entry
+        for entry in SUPPORTED_EMBEDDING_MODELS
+        if entry.name == _GOOGLE_EMBEDDING_MODEL
+        and entry.embedding_precision == EmbeddingPrecision.FLOAT
+    )
+    upsert_cloud_embedding_provider(
+        db_session,
+        CloudEmbeddingProviderCreationRequest(provider_type=EmbeddingProvider.GOOGLE),
+    )
+    updated = SavedSearchSettings.from_db_model(primary)
+    # The registry uses google/ to namespace index names; the GenAI Vertex
+    # client expects the publisher's bare model ID when calling embed_content.
+    updated.model_name = model.name.removeprefix("google/")
+    updated.model_dim = model.dim
+    updated.index_name = model.index_name
+    updated.embedding_precision = model.embedding_precision
+    updated.normalize = True
+    updated.query_prefix = ""
+    updated.passage_prefix = ""
+    updated.provider_type = EmbeddingProvider.GOOGLE
+    db_session.delete(future)
+    update_current_search_settings(db_session, updated, preserved_fields=[])
+    logger.notice("Configured fresh search index with Google cloud embeddings.")
+
+
+def _seed_vertex_llm(db_session: Session, project: str) -> None:
+    # A provider without a default may still be an intentional customer choice.
+    if fetch_default_llm_model(db_session) is not None or db_session.scalar(
+        select(exists().select_from(LLMProvider))
+    ):
+        return
+
+    created = upsert_llm_provider(
+        LLMProviderUpsertRequest(
+            name="Vertex AI (Workload Identity)",
+            provider=LlmProviderNames.VERTEX_AI,
+            custom_config={
+                VERTEX_AUTH_METHOD_KWARG: VERTEX_AUTH_METHOD_WORKLOAD_IDENTITY,
+                VERTEX_PROJECT_KWARG: project,
+                VERTEX_LOCATION_KWARG: VERTEXAI_DEFAULT_LOCATION,
+            },
+            model_configurations=[
+                ModelConfigurationUpsertRequest(
+                    name=_VERTEX_CHAT_MODEL, is_visible=True
+                )
+            ],
+        ),
+        db_session,
+    )
+    update_default_provider(
+        provider_id=created.id, model_name=_VERTEX_CHAT_MODEL, db_session=db_session
+    )
+    logger.notice("Configured Vertex AI as the default chat provider.")
+
+
+def seed_vertex_defaults(db_session: Session) -> None:
+    """Opt-in self-hosted ADC bootstrap; serialize both replicas across API commits."""
+    project = VERTEXAI_DEFAULT_PROJECT
+    if MULTI_TENANT or not project:
+        return
+
+    # Both upsert APIs commit internally. A transaction lock on db_session would
+    # be released halfway through; hold a dedicated connection's session lock
+    # until search settings and the chat default have both been persisted.
+    bind = db_session.get_bind()
+    with (
+        bind.engine if isinstance(bind, Connection) else bind
+    ).connect() as lock_connection:
+        lock_connection.execute(
+            text("SELECT pg_advisory_lock(:namespace, :key)"),
+            dict(zip(("namespace", "key"), _VERTEX_BOOTSTRAP_LOCK)),
+        )
+        try:
+            db_session.expire_all()
+            _seed_google_embeddings(db_session, project)
+            _seed_vertex_llm(db_session, project)
+        finally:
+            unlocked = lock_connection.scalar(
+                text("SELECT pg_advisory_unlock(:namespace, :key)"),
+                dict(zip(("namespace", "key"), _VERTEX_BOOTSTRAP_LOCK)),
+            )
+            if not unlocked:
+                raise RuntimeError("Failed to release Vertex bootstrap database lock")
+
 
 
 def setup_onyx(
@@ -95,6 +264,11 @@ def setup_onyx(
 
     The Tenant Service calls the tenants/create endpoint which runs this.
     """
+    # A fresh migration still contains the legacy local PRESENT index and a
+    # local FUTURE index. Replace those before swap/index initialization can
+    # touch either index or contact the model server.
+    seed_vertex_defaults(db_session)
+
     check_and_perform_index_swap(db_session=db_session)
 
     active_search_settings = get_active_search_settings(db_session)
@@ -164,10 +338,10 @@ def setup_onyx(
                 "Could not connect to a document index within the specified timeout."
             )
 
-        logger.notice(
-            "Model Server: http://%s:%s", MODEL_SERVER_HOST, MODEL_SERVER_PORT
-        )
         if search_settings.provider_type is None:
+            logger.notice(
+                "Model Server: http://%s:%s", MODEL_SERVER_HOST, MODEL_SERVER_PORT
+            )
             # In integration tests, do not block API startup on warm-up
             warm_up_bi_encoder(
                 embedding_model=EmbeddingModel.from_db_model(
@@ -320,14 +494,15 @@ def update_default_multipass_indexing(db_session: Session) -> None:
     logger.debug("Docs exist: %s, Connectors exist: %s", docs_exist, connectors_exist)
 
     if not docs_exist and not connectors_exist:
-        logger.info(
-            "No existing docs or connectors found. Checking GPU availability for multipass indexing."
-        )
-        gpu_available = gpu_status_request(indexing=True)
-        logger.info("GPU available: %s", gpu_available)
-
         current_settings = get_current_search_settings(db_session)
-
+        # Only the opt-in Google bootstrap skips the local GPU probe.
+        gpu_available = (
+            False
+            if VERTEXAI_DEFAULT_PROJECT
+            and current_settings.provider_type == EmbeddingProvider.GOOGLE
+            else gpu_status_request(indexing=True)
+        )
+        logger.info("GPU available: %s", gpu_available)
         logger.notice("Updating multipass indexing setting to: %s", gpu_available)
         updated_settings = SavedSearchSettings.from_db_model(current_settings)
         # Enable multipass indexing if GPU is available or if using a cloud provider

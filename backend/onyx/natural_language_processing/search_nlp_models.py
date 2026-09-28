@@ -327,12 +327,19 @@ class AuthenticationError(Exception):
 class CloudEmbedding:
     def __init__(
         self,
-        api_key: str,
+        api_key: str | None,
         provider: EmbeddingProvider,
         api_url: str | None = None,
         api_version: str | None = None,
         timeout: int = API_BASED_EMBEDDING_TIMEOUT,
     ) -> None:
+        if api_key is None:
+            if provider != EmbeddingProvider.GOOGLE:
+                raise ValueError(f"API key is required for {provider} embeddings")
+            if not os.environ.get("GOOGLE_CLOUD_PROJECT", "").strip():
+                raise ValueError(
+                    "GOOGLE_CLOUD_PROJECT is required for Google embeddings using ADC"
+                )
         self.provider = provider
         self.api_key = api_key
         self.api_url = api_url
@@ -340,7 +347,9 @@ class CloudEmbedding:
         self.timeout = timeout
         self.http_client = httpx.AsyncClient(timeout=timeout)
         self._closed = False
-        self.sanitized_api_key = api_key[:4] + "********" + api_key[-4:]
+        self.sanitized_api_key = (
+            api_key[:4] + "********" + api_key[-4:] if api_key is not None else None
+        )
 
     async def _embed_openai(
         self, texts: list[str], model: str | None, reduced_dimension: int | None
@@ -439,24 +448,38 @@ class CloudEmbedding:
 
         resolved_model = model or DEFAULT_VERTEX_MODEL
 
-        service_account_info = json.loads(self.api_key)
-        credentials = service_account.Credentials.from_service_account_info(
-            service_account_info,
-            scopes=["https://www.googleapis.com/auth/cloud-platform"],
-        )
-        project_id = service_account_info["project_id"]
-        location = (
-            service_account_info.get("location")
-            or os.environ.get("GOOGLE_CLOUD_LOCATION")
-            or "global"
-        )
+        if self.api_key is None:
+            # Workload Identity supplies ADC; select the Vertex project explicitly
+            # rather than relying on the metadata server's default project.
+            project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "").strip()
+            if not project_id:
+                raise ValueError(
+                    "GOOGLE_CLOUD_PROJECT is required for Google embeddings using ADC"
+                )
+            credentials = None
+            location = os.environ.get("GOOGLE_CLOUD_LOCATION") or "global"
+        else:
+            service_account_info = json.loads(self.api_key)
+            credentials = service_account.Credentials.from_service_account_info(
+                service_account_info,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            )
+            project_id = service_account_info["project_id"]
+            location = (
+                service_account_info.get("location")
+                or os.environ.get("GOOGLE_CLOUD_LOCATION")
+                or "global"
+            )
 
-        client = genai.Client(
-            vertexai=True,
-            project=project_id,
-            location=location,
-            credentials=credentials,
-        )
+        if credentials is None:
+            client = genai.Client(vertexai=True, project=project_id, location=location)
+        else:
+            client = genai.Client(
+                vertexai=True,
+                project=project_id,
+                location=location,
+                credentials=credentials,
+            )
 
         # gemini-embedding-2 rejects task_type; embedding intent is conveyed
         # via the instruction-formatted text instead. Older models continue
@@ -652,7 +675,7 @@ class CloudEmbedding:
 
     @staticmethod
     def create(
-        api_key: str,
+        api_key: str | None,
         provider: EmbeddingProvider,
         api_url: str | None = None,
         api_version: str | None = None,
@@ -821,7 +844,7 @@ class EmbeddingModel:
         if self.provider_type is None:
             raise ValueError("Provider type is required for direct API calls")
 
-        if self.api_key is None:
+        if self.api_key is None and self.provider_type != EmbeddingProvider.GOOGLE:
             logger.error("API key not provided for cloud model")
             raise RuntimeError("API key not provided for cloud model")
 
