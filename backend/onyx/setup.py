@@ -117,46 +117,54 @@ _VERTEX_CHAT_MODEL = "gemini-3.8-flash"
 
 
 def _seed_google_embeddings(db_session: Session, project: str) -> None:
-    """Replace only the untouched migration rows, before any index is started."""
+    """Replace untouched migration settings only while no content has been indexed."""
     search_settings = get_all_search_settings(db_session)
-    primary = next(
-        (row for row in search_settings if row.status == IndexModelStatus.PRESENT),
+    legacy = next(
+        (row for row in search_settings if row.model_name == OLD_DEFAULT_DOCUMENT_ENCODER_MODEL),
         None,
     )
-    future = next(
-        (row for row in search_settings if row.status == IndexModelStatus.FUTURE),
+    local = next(
+        (row for row in search_settings if row.model_name == DOCUMENT_ENCODER_MODEL),
         None,
     )
+    # Another startup process may have already promoted the local FUTURE row.
+    # Both migration states are safe to replace only if they have no content.
     if (
         len(search_settings) != 2
-        or primary is None
-        or future is None
-        or primary.model_name != OLD_DEFAULT_DOCUMENT_ENCODER_MODEL
-        or primary.model_dim != OLD_DEFAULT_MODEL_DOC_EMBEDDING_DIM
-        or primary.index_name != "danswer_chunk"
-        or primary.normalize
-        or primary.query_prefix
-        or primary.passage_prefix
-        or primary.provider_type is not None
-        or primary.embedding_precision != EmbeddingPrecision.FLOAT
-        or primary.reduced_dimension is not None
-        or primary.enable_contextual_rag
-        or future.model_name != DOCUMENT_ENCODER_MODEL
-        or future.model_dim != DOC_EMBEDDING_DIM
-        or future.index_name != f"danswer_chunk_{clean_model_name(DOCUMENT_ENCODER_MODEL)}"
-        or future.normalize != NORMALIZE_EMBEDDINGS
-        or future.query_prefix != ASYM_QUERY_PREFIX
-        or future.passage_prefix != ASYM_PASSAGE_PREFIX
-        or future.provider_type is not None
-        or future.reduced_dimension is not None
-        or future.embedding_precision != EmbeddingPrecision.FLOAT
-        or future.enable_contextual_rag
+        or legacy is None
+        or local is None
+        or (legacy.status, local.status)
+        not in (
+            (IndexModelStatus.PRESENT, IndexModelStatus.FUTURE),
+            (IndexModelStatus.PAST, IndexModelStatus.PRESENT),
+        )
+        or legacy.model_dim != OLD_DEFAULT_MODEL_DOC_EMBEDDING_DIM
+        or legacy.index_name != "danswer_chunk"
+        or legacy.normalize
+        or legacy.query_prefix
+        or legacy.passage_prefix
+        or legacy.provider_type is not None
+        or legacy.embedding_precision != EmbeddingPrecision.FLOAT
+        or legacy.reduced_dimension is not None
+        or legacy.enable_contextual_rag
+        or local.model_dim != DOC_EMBEDDING_DIM
+        or local.index_name != f"danswer_chunk_{clean_model_name(DOCUMENT_ENCODER_MODEL)}"
+        or local.normalize != NORMALIZE_EMBEDDINGS
+        or local.query_prefix != ASYM_QUERY_PREFIX
+        or local.passage_prefix != ASYM_PASSAGE_PREFIX
+        or local.provider_type is not None
+        or local.reduced_dimension is not None
+        or local.embedding_precision != EmbeddingPrecision.FLOAT
+        or local.enable_contextual_rag
         or check_docs_exist(db_session)
         or check_connectors_exist(db_session)
         or db_session.scalar(select(exists().select_from(IndexAttempt)))
         or fetch_embedding_provider(db_session, EmbeddingProvider.GOOGLE) is not None
     ):
         return
+
+    primary = legacy if legacy.status == IndexModelStatus.PRESENT else local
+    obsolete = local if primary is legacy else legacy
 
     cloud_project = os.environ.get("GOOGLE_CLOUD_PROJECT", "").strip()
     cloud_location = os.environ.get("GOOGLE_CLOUD_LOCATION") or "global"
@@ -187,7 +195,7 @@ def _seed_google_embeddings(db_session: Session, project: str) -> None:
     updated.query_prefix = ""
     updated.passage_prefix = ""
     updated.provider_type = EmbeddingProvider.GOOGLE
-    db_session.delete(future)
+    db_session.delete(obsolete)
     update_current_search_settings(db_session, updated, preserved_fields=[])
     logger.notice("Configured fresh search index with Google cloud embeddings.")
 
@@ -264,9 +272,8 @@ def setup_onyx(
 
     The Tenant Service calls the tenants/create endpoint which runs this.
     """
-    # A fresh migration still contains the legacy local PRESENT index and a
-    # local FUTURE index. Replace those before swap/index initialization can
-    # touch either index or contact the model server.
+    # A fresh migration contains two local search settings. Replace either the
+    # untouched or prematurely swapped empty index before model warm-up.
     seed_vertex_defaults(db_session)
 
     check_and_perform_index_swap(db_session=db_session)

@@ -1,15 +1,15 @@
 # XLSMART Onyx GCP test environment
 
-This is an **isolated, billable production-readiness test design**, not a production certification. Target: existing project `internal-tech-tools-enterprise`, region `asia-southeast2`, upstream Onyx chart 0.8.28 and the branded source checkout. Nothing in this directory installs the application automatically. Review a real plan, spend and policy constraints before any `apply`.
+This is an **isolated, billable production-readiness test deployment**, not a production certification. Target: existing project `internal-tech-tools-enterprise`, region `asia-southeast2`, upstream Onyx chart 0.8.28 and the branded source checkout. Review a real plan, spend and policy constraints before any further `apply`.
 
 ## Topology and limits
 
 - Regional GKE Standard in three zones with a **regional** floor of three `e2-standard-8` nodes and maximum six. The autoscaler's BALANCED policy is best-effort; OpenSearch hard zone anti-affinity requires pods on three distinct zones and the capacity must be confirmed on the running cluster. Nodes are private, with a restricted public control plane, Workload Identity, Shielded VMs, GKE Dataplane V2, CSI Persistent Disks, logging, VPC Flow Logs and Cloud NAT. Explicit `admin_cidrs` input rejects world-open access. Node identity can pull, but not push, images.
 - Regional HA Cloud SQL PostgreSQL 16 **Enterprise** (private IP, TLS required, PITR, 14 backups, seven days of transaction logs, deletion protection); Memorystore Redis Standard HA (private services access, AUTH + server TLS, six-hour RDB snapshots); private versioned GCS file storage and a private immutable-tag Artifact Registry. Application passwords and signing key are generated once and synced through Secret Manager and External Secrets Operator (ESO). Protected versioned GCS bucket holds the Terraform state. Terraform state itself **contains** generated passwords and the Redis AUTH string: restrict state-bucket IAM to the deploy team and never publish plan/state files.
-- Self-managed three-node OpenSearch with one `premium-rwo` 100Gi disk per zone, zone-hard anti-affinity and the subchart quorum PDB. API, web and both model deployments have two replicas spread across zones. Ingress service is `ClusterIP`; **no public HTTP/HTTPS endpoint** is created. Access uses local `kubectl port-forward` until a reviewed DNS/certificate/TLS ingress is designed.
+- Self-managed three-node OpenSearch with one `premium-rwo` 100Gi disk per zone, zone-hard anti-affinity and the subchart quorum PDB. API and web each have two replicas spread across zones. **No in-cluster model server is built or deployed**: chat uses Vertex AI `gemini-3.8-flash`, and embeddings use Vertex AI `gemini-embedding-001` (3072 dimensions). The GKE runtime KSA authenticates to both via Workload Identity; its GSA has the `aiplatform.endpoints.predict` permission. The Gemini chat endpoint uses Vertex location `global`, **not** Jakarta data residency; confirm regional processing requirements before production. Ingress service is `ClusterIP`; **no public HTTP/HTTPS endpoint** is created. Access uses local `kubectl port-forward` until a reviewed DNS/certificate/TLS ingress is designed.
 - The public [XLSMART Private Services Access module](https://github.com/xlsmartenterprise/tfmodule-google-private-services-access/commit/b8f47c9eed605fa3cc61cf586bbfebafb0633109) is pinned to an immutable revision. No public XLSMART module was found for enabling GCP project services; `google_project_service` enables APIs without disabling shared APIs on destroy.
 
-**Cost boundary:** 3–6 running 8-vCPU nodes, regional HA Cloud SQL, Redis Standard HA, NAT, three SSD-backed OpenSearch volumes, GCS, image builds/registry, egress and logging all incur recurring or usage charges. Check current pricing/quotas and obtain a budget decision before applying. The code deliberately cannot be fully validated as a deployed service without provisioning billable resources. Never assume a `terraform plan` proves quota, Kubernetes admission, image compatibility or data recovery.
+**Cost boundary:** 3–6 running 8-vCPU nodes, regional HA Cloud SQL, Redis Standard HA, NAT, three SSD-backed OpenSearch volumes, GCS, Vertex AI inference/embeddings, image builds/registry, egress and logging all incur recurring or usage charges. Check current pricing/quotas and keep a budget alert. Neither a `terraform plan` nor a healthy deployment proves data recovery, connector indexing or production readiness.
 
 ## Prerequisites and remote state
 
@@ -54,7 +54,7 @@ Cloud Build does not prove that the generated images have been scanned, admitted
 
 ## External Secrets and CA trust
 
-Install ESO chart 2.11.0 with the Terraform-linked `external-secrets/external-secrets` KSA, then create the Onyx namespace. The names of the four Google secrets are fixed in `deployment/helm/gcp-staging/external-secrets.yaml`; the operator's IAM can access **only these four secrets**. The application's `onyx/onyx-runtime` KSA can access only its file bucket. GCP server CAs are public certificates, not passwords; refresh the ConfigMaps after certificate rotation. Use `kubectl` with an authorized cluster context.
+Install ESO chart 2.11.0 with the Terraform-linked `external-secrets/external-secrets` KSA, then create the Onyx namespace. The names of the four Google secrets are fixed in `deployment/helm/gcp-staging/external-secrets.yaml`; the operator's IAM can access **only these four secrets**. The application's `onyx/onyx-runtime` KSA uses a GSA with access to its file bucket and Vertex AI prediction, not a downloaded service-account key. GCP server CAs are public certificates, not passwords; refresh the ConfigMaps after certificate rotation. Use `kubectl` with an authorized cluster context.
 
 ```sh
 ESO_GSA=$(terraform -chdir=deployment/terraform/gcp/infra output -raw external_secrets_gsa_email)
@@ -78,11 +78,11 @@ kubectl -n onyx wait --for=condition=Ready externalsecret/onyx-postgresql \
   externalsecret/onyx-userauth --timeout=5m
 ```
 
-If the Memorystore certificate does not validate the private IP returned by `redis_host`, **do not switch off** hostname checking for a production-grade test. Fix endpoint/SAN trust before proceeding. Verify a real Cloud SQL + Redis TLS connection in running workloads; a rendered manifest cannot prove certificates or network access. Do not print Kubernetes Secret contents.
+If the Memorystore certificate does not validate the private IP returned by `redis_host`, **do not switch off** hostname checking. Cloud SQL's current per-instance CA lacks an Authority Key Identifier; Python 3.13 asyncpg otherwise fails startup under its default `VERIFY_X509_STRICT`. The chart enables `POSTGRES_SSL_ALLOW_LEGACY_CA=true` only for the Cloud SQL PostgreSQL asyncpg connection: it clears that strict verification flag, but **retains certificate chain verification** against the mounted CA. psycopg2 still uses `sslmode=verify-ca`. Replace the legacy CA and remove the exception when feasible. Verify real Cloud SQL + Redis TLS connections in running workloads; a rendered manifest cannot prove certificates or network access. Do not print Kubernetes Secret contents.
 
-## Install full Onyx and smoke the changed path
+## Install Vertex-only Onyx and smoke the changed path
 
-Build pinned chart dependencies as documented in `deployment/helm/charts/onyx/Chart.yaml` (CNPG, OpenSearch, ingress-nginx, Redis Operator, MinIO and sandbox repositories), even though some dependencies are disabled. Chart values explicitly reject Lite/CI reductions; cloud SQL/Redis/GCS replace in-cluster singleton data stores. Use immutable matching commit tags for all three branded images:
+Build pinned chart dependencies as documented in `deployment/helm/charts/onyx/Chart.yaml` (CNPG, OpenSearch, ingress-nginx, Redis Operator, MinIO and sandbox repositories), even though some dependencies are disabled. Chart values explicitly reject Lite/CI reductions; cloud SQL/Redis/GCS replace in-cluster singleton data stores. Cloud Build produces **two**, not three, matching commit-tagged images (`web-server` and `backend`). The chart disables both model-server deployments/services and sets `DISABLE_MODEL_SERVER=true`; do not add a model image override.
 
 ```sh
 helm repo add cnpg https://cloudnative-pg.github.io/charts
@@ -100,6 +100,7 @@ REDIS_PORT=$(terraform -chdir=deployment/terraform/gcp/infra output -raw redis_p
 FILE_BUCKET=$(terraform -chdir=deployment/terraform/gcp/infra output -raw file_store_bucket)
 helm upgrade --install onyx deployment/helm/charts/onyx --namespace onyx \
   -f deployment/helm/gcp-staging/values.yaml --wait --timeout 30m \
+  --set api.replicaCount=1 \
   --set-string "global.version=$TAG" \
   --set-string "serviceAccount.annotations.iam\\.gke\\.io/gcp-service-account=$RUNTIME_GSA" \
   --set-string "configMap.POSTGRES_HOST=$SQL_HOST" \
@@ -109,9 +110,10 @@ helm upgrade --install onyx deployment/helm/charts/onyx --namespace onyx \
   --set-string "configMap.GCS_FILE_STORE_BUCKET_NAME=$FILE_BUCKET" \
   --set-string "webserver.image.repository=$REGISTRY/web-server" \
   --set-string "api.image.repository=$REGISTRY/backend" \
-  --set-string "celery_shared.image.repository=$REGISTRY/backend" \
-  --set-string "inferenceCapability.image.repository=$REGISTRY/model-server" \
-  --set-string "indexCapability.image.repository=$REGISTRY/model-server"
+  --set-string "celery_shared.image.repository=$REGISTRY/backend"
+
+helm upgrade onyx deployment/helm/charts/onyx --namespace onyx \
+  --reuse-values --set api.replicaCount=2 --wait --timeout 10m
 kubectl -n onyx get pods -o wide
 kubectl -n onyx get pvc
 kubectl -n onyx port-forward --address 127.0.0.1 service/onyx-nginx-controller 8080:80
@@ -119,8 +121,8 @@ kubectl -n onyx port-forward --address 127.0.0.1 service/onyx-nginx-controller 8
 # Browser: http://localhost:8080/auth/login?autoRedirectToSignup=false
 ```
 
-Verify login/signup from the real browser, configure a **test** connector and its authorized credentials, synchronize a known document, then query it through search. Check three OpenSearch pods in different zones, all PVCs `Bound`, SQL/Redis TLS, the GCS file path, rolling restart with one node disrupted, and a PITR restore to an isolated database **before** claiming readiness. No real connector credentials, LLM keys or SMTP settings belong in values or Terraform state.
+Start with one API replica on a new database to serialize first-run Alembic migrations, then upgrade to two after it becomes ready. Check `kubectl -n onyx get deploy,sts,pvc,externalsecret,svc`: 2/2 API, 2/2 web, 3/3 OpenSearch, three `Bound` PVCs, four synced secrets, no model-server deployment/service, no external ingress IP. From a worker pod, call `genai.Client(vertexai=True, project="internal-tech-tools-enterprise", location="global").models.embed_content(model="gemini-embedding-001", contents="staging test")` and expect a 3072-dimensional embedding; call `models.generate_content(model="gemini-3.8-flash", contents="Reply GKE_OK")` and expect generated text. The API should seed the current Google search index and the default Vertex chat provider; inspect those settings, not only direct SDK calls. Verify login/signup from a real browser, configure a **test** connector with authorized credentials, synchronize a known document, then query it through search before claiming end-to-end search. Also check SQL/Redis TLS, GCS file read/write, rolling restart with one node disrupted, and PITR restore to an isolated database **before** claiming readiness. No real connector credentials, LLM keys or SMTP settings belong in values or Terraform state.
 
 ## Production promotion gates
 
-This test defaults to a local-only, non-TLS browser tunnel; plan a TLS termination route with DNS and certificate rotation before a public hostname. The bundled OpenSearch 3.x chart defaults to demo/self-signed certificates and Onyx defaults to `OPENSEARCH_VERIFY_CERTS=false`; replace demo certificates with an internal PKI, enable certificate verification for every client, and exercise snapshot/restore of the OpenSearch index. Configure on-call notification channels/alerts, cross-region disaster recovery if policy demands, node/image vulnerability scanning, connector egress controls, quotas, PDB for any additional workloads, and backup restore drills. Application-level Celery beat/workers remain singleton by chart design. These are **readiness gates**, not claims silently satisfied by this infrastructure plan.
+This test defaults to a local-only, non-TLS browser tunnel; plan a TLS termination route with DNS and certificate rotation before a public hostname. The bundled OpenSearch 3.x chart defaults to demo/self-signed certificates and Onyx defaults to `OPENSEARCH_VERIFY_CERTS=false`; replace demo certificates with an internal PKI, enable certificate verification for every client, and exercise snapshot/restore of the OpenSearch index. Confirm the required XLSMART EE license; without a valid license the paid features remain locked. Configure on-call notification channels/alerts, cross-region disaster recovery if policy demands, node/image vulnerability scanning, connector egress controls, quotas, PDB for any additional workloads, and backup restore drills. Application-level Celery beat/workers remain singleton by chart design. These are **readiness gates**, not claims silently satisfied by this infrastructure plan.
