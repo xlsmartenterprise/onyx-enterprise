@@ -27,6 +27,7 @@ function ssoOnlyMetadata(
     hasUsers: true,
     oauthEnabled: false,
     passwordAuthEnabled: false,
+    inviteOnlyEnabled: false,
     ssoProviders: [provider("okta")],
     ...overrides,
   };

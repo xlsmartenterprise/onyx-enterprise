@@ -1,0 +1,97 @@
+# Prerequisite: cert-manager CRDs/controller installed and healthy in this cluster.
+# Apply ONLY after an operator approves the OpenSearch certificate migration.
+# cert-manager stores all private keys in namespace-scoped Kubernetes Secrets;
+# back up the CA Secret securely outside git. The CA is an internal trust anchor,
+# not an internet-trusted public certificate. Restrict read access to these Secrets.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: onyx-opensearch-bootstrap
+  namespace: onyx
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: onyx-opensearch-root
+  namespace: onyx
+spec:
+  secretName: onyx-opensearch-root
+  commonName: onyx-opensearch-root
+  subject:
+    organizations: [XLSMART]
+  isCA: true
+  duration: 43800h # five years; plan CA rollover before expiry
+  renewBefore: 2160h
+  privateKey:
+    encoding: PKCS8
+    algorithm: RSA
+    size: 3072
+    rotationPolicy: Never # retain the CA key; coordinate trust for certificate renewal
+  issuerRef:
+    name: onyx-opensearch-bootstrap
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: onyx-opensearch-ca
+  namespace: onyx
+spec:
+  ca:
+    secretName: onyx-opensearch-root
+---
+# A shared node identity is a staging compromise required by the upstream
+# StatefulSet's single secretMounts value: three replicas mount this one Secret.
+# Isolate Secret access to the OpenSearch pods and migrate to per-node issuance
+# before higher-trust environments. Onyx clients only need the public CA.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: onyx-opensearch-node
+  namespace: onyx
+spec:
+  secretName: onyx-opensearch-node-tls
+  commonName: onyx-opensearch-node
+  subject:
+    organizations: [XLSMART]
+  dnsNames:
+    - onyx-opensearch-master.onyx.svc.cluster.local
+    - onyx-opensearch-master-headless.onyx.svc.cluster.local
+    - '*.onyx-opensearch-master-headless.onyx.svc.cluster.local'
+  usages: [server auth, client auth]
+  duration: 2160h
+  renewBefore: 720h
+  privateKey:
+    encoding: PKCS8
+    algorithm: RSA
+    size: 3072
+    rotationPolicy: Always
+  issuerRef:
+    name: onyx-opensearch-ca
+    kind: Issuer
+---
+# Do not mount the super-admin certificate/key into application or OpenSearch pods.
+# Restrict its Secret to an operator-only account for securityadmin.sh and recovery.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: onyx-opensearch-admin
+  namespace: onyx
+spec:
+  secretName: onyx-opensearch-admin-tls
+  commonName: onyx-opensearch-admin
+  subject:
+    organizations: [XLSMART]
+  usages: [client auth]
+  duration: 2160h
+  renewBefore: 720h
+  privateKey:
+    encoding: PKCS8
+    algorithm: RSA
+    size: 3072
+    rotationPolicy: Always
+  issuerRef:
+    name: onyx-opensearch-ca
+    kind: Issuer

@@ -70,8 +70,8 @@ opensearch:
           name: onyx-opensearch
           key: opensearch_admin_password
 
-# Do not provision an external LoadBalancer (the chart otherwise defaults to
-# publicly reachable TCP/80). Loopback port-forward is the only default access.
+# GKE Ingress terminates HTTPS at the external load balancer; this internal
+# service remains ClusterIP so no direct internet-facing port 80 is created.
 ingress:
   enabled: false
 letsencrypt:
@@ -80,10 +80,16 @@ nginx:
   enabled: true
   controller:
     replicaCount: 2
-    # Only in-cluster traffic, forwarded to loopback for test access.
+    podAnnotations:
+      onyx.app/nginx-config-version: "8"
+    extraEnvs:
+      - name: DOMAIN
+        value: chat-staging.vibecloud.id
     service:
       type: ClusterIP
-
+      annotations:
+        cloud.google.com/neg: '{"ingress":true}'
+        cloud.google.com/backend-config: '{"ports":{"80":"onyx-staging-nginx"}}'
 api:
   replicaCount: 2
   affinity:
@@ -206,9 +212,9 @@ configMap:
   # The chart emits a default false retrieval flag; ONYX_DISABLE_VESPA
   # forces OpenSearch retrieval on for a fresh install (no Vespa index).
   ONYX_DISABLE_VESPA: "true"
-  # HTTPS public URLs require independently prepared DNS + certificate + ingress.
-  WEB_DOMAIN: http://localhost:8080
-  DOMAIN: localhost
+  WEB_DOMAIN: https://chat-staging.vibecloud.id
+  DOMAIN: chat-staging.vibecloud.id
+  CORS_ALLOWED_ORIGIN: https://chat-staging.vibecloud.id
   ENABLE_CRAFT: "false"
 
 # The OpenSearch subchart already emits a PDB with maxUnavailable=1.

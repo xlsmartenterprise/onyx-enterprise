@@ -14,6 +14,10 @@ output "cluster_location" {
   value = google_container_cluster.onyx.location
 }
 
+output "chat_public_ip" {
+  value = google_compute_global_address.chat.address
+}
+
 output "artifact_registry_repository" {
   value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.onyx.repository_id}"
 }

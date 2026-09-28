@@ -38,6 +38,13 @@ resource "google_compute_network" "onyx" {
   depends_on              = [google_project_service.required["compute.googleapis.com"]]
 }
 
+# Dedicated global VIP for the GKE external HTTPS load balancer; DNS lives
+# outside this project and must point at this output for certificate issuance.
+resource "google_compute_global_address" "chat" {
+  project = var.project_id
+  name    = "onyx-staging-chat-ip"
+}
+
 resource "google_compute_subnetwork" "private" {
   project                  = var.project_id
   name                     = "onyx-staging-private"

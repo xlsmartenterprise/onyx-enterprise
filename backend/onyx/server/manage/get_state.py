@@ -11,7 +11,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from onyx import __version__
-from onyx.auth.users import anonymous_user_enabled, user_needs_to_be_verified
+from onyx.auth.users import (
+    anonymous_user_enabled,
+    user_needs_to_be_verified,
+    workspace_invite_only_enabled,
+)
 from onyx.configs.app_configs import OAUTH_ENABLED
 from onyx.configs.constants import (
     DEV_VERSION_PATTERN,
@@ -233,6 +237,7 @@ async def get_auth_type(response: Response) -> AuthConfigResponse:
         has_users=has_users,
         oauth_enabled=OAUTH_ENABLED,
         password_auth_enabled=security.password_auth_enabled,
+        invite_only_enabled=workspace_invite_only_enabled(),
         sso_providers=await run_in_threadpool(_fetch_sso_provider_options),
     )
 

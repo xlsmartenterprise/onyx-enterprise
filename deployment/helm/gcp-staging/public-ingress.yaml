@@ -1,0 +1,57 @@
+# Apply only after the named admin has logged in and anonymous registration is
+# denied. Hostinger DNS must map this host to Terraform's chat_public_ip output
+# for the Google-managed certificate to become Active.
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: onyx-staging-chat-cert
+  namespace: onyx
+spec:
+  domains:
+    - chat-staging.vibecloud.id
+---
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: onyx-staging-https
+  namespace: onyx
+spec:
+  redirectToHttps:
+    enabled: true
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: onyx-staging-nginx
+  namespace: onyx
+spec:
+  timeoutSec: 900
+  healthCheck:
+    type: HTTP
+    requestPath: /nginx-health
+    port: 1024
+    checkIntervalSec: 15
+    timeoutSec: 5
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: onyx-staging-chat
+  namespace: onyx
+  annotations:
+    kubernetes.io/ingress.class: gce
+    kubernetes.io/ingress.global-static-ip-name: onyx-staging-chat-ip
+    networking.gke.io/managed-certificates: onyx-staging-chat-cert
+    networking.gke.io/v1beta1.FrontendConfig: onyx-staging-https
+spec:
+  rules:
+    - host: chat-staging.vibecloud.id
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: onyx-nginx-controller
+                port:
+                  number: 80

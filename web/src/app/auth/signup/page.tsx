@@ -53,8 +53,12 @@ const Page = async (props: {
     return redirect("/app");
   }
 
-  // Kill switch off: signup is refused by the backend, bounce to login.
-  if (!cloud && authTypeMetadata?.passwordAuthEnabled === false) {
+  // Invite-only workspaces admit existing users but have no public signup page.
+  if (
+    !cloud &&
+    (authTypeMetadata?.passwordAuthEnabled === false ||
+      authTypeMetadata?.inviteOnlyEnabled === true)
+  ) {
     return redirect("/auth/login");
   }
 

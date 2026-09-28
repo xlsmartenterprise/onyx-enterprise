@@ -81,6 +81,8 @@ class AuthConfigResponse(BaseModel):
     oauth_enabled: bool = False
     # Kill switch (single-tenant). UI hint only, the backend guards enforce.
     password_auth_enabled: bool = True
+    # Public signup is unavailable when workspace access requires an invitation.
+    invite_only_enabled: bool = False
     # Enabled DB-backed SSO providers, one login button each. Empty on cloud and
     # on instances with no provider rows, so the page falls back to the built-in
     # password (and Google when oauth_enabled) login.

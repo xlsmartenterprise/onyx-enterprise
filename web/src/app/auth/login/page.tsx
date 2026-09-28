@@ -38,11 +38,11 @@ export default async function Page(props: PageProps) {
     console.log(`Some fetch failed for the login page - ${e}`);
   }
 
-  // if there are no users, send self-hosted deployments to signup for
-  // initial setup
+  // Only open first-user bootstrap; an invite-only workspace has no public signup.
   if (
     authTypeMetadata &&
     !authTypeMetadata.hasUsers &&
+    !authTypeMetadata.inviteOnlyEnabled &&
     !autoRedirectToSignupDisabled &&
     authTypeMetadata.multiTenant === false
   ) {
@@ -80,10 +80,13 @@ export default async function Page(props: PageProps) {
 
   return (
     <div className="flex flex-col ">
-      {/* Kill switch off: omit authState so the signup footer drops. */}
+      {/* Keep password login, but hide signup for invite-only workspaces. */}
       <AuthFlowContainer
         authState={
-          authTypeMetadata?.passwordAuthEnabled !== false ? "login" : undefined
+          authTypeMetadata?.passwordAuthEnabled !== false &&
+          !authTypeMetadata?.inviteOnlyEnabled
+            ? "login"
+            : undefined
         }
       >
         <LoginPage

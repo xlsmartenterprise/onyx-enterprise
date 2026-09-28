@@ -1,0 +1,61 @@
+# Apply as an EXTRA values file after gcp-staging/values.yaml only during a
+# planned OpenSearch migration. Do not combine with a normal rolling upgrade:
+# demo-cert nodes cannot authenticate CA-signed nodes during a mixed rollout.
+# Prerequisites: cert-manager Certificates in opensearch-tls-certificates.yaml
+# Ready; manually provision onyx-opensearch-ca ConfigMap with ONLY the public
+# root certificate under key onyx-opensearch-ca.crt. Check exact DNS SANs first.
+# On certificate renewal, the mounted Secret changes but OpenSearch may not
+# reload it automatically: plan verified restarts before the leaf expires.
+# Preserve all three OpenSearch PVCs and the existing security index.
+customCACerts:
+  enabled: true
+  configMapName: onyx-opensearch-ca
+
+configMap:
+  OPENSEARCH_USE_SSL: "true"
+  OPENSEARCH_VERIFY_CERTS: "true"
+  OPENSEARCH_CA_CERTS: /usr/local/share/ca-certificates/onyx-opensearch-ca.crt
+
+opensearch:
+  # chart 3.6.0's secretMounts mounts into each StatefulSet replica as read-only
+  # Secret volumes; fsGroup=1000 grants the OpenSearch process read access.
+  secretMounts:
+    - name: onyx-opensearch-node-tls
+      secretName: onyx-opensearch-node-tls
+      path: /usr/share/opensearch/config/tls
+      defaultMode: 0440
+  extraEnvs:
+    - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: onyx-opensearch
+          key: opensearch_admin_password
+    - name: DISABLE_INSTALL_DEMO_CONFIG
+      value: "true"
+    - name: POD_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.name
+  # Helm replaces the subchart's opensearch.yml rather than merging keys.
+  # Publish individual headless DNS names for transport TLS hostname checks.
+  config:
+    opensearch.yml: |
+      cluster.name: onyx-opensearch
+      network.host: 0.0.0.0
+      transport.publish_host: ${POD_NAME}.onyx-opensearch-master-headless.onyx.svc.cluster.local
+      transport.ssl.enforce_hostname_verification: true
+      transport.ssl.resolve_hostname: true
+      plugins.security.ssl.transport.pemcert_filepath: tls/tls.crt
+      plugins.security.ssl.transport.pemkey_filepath: tls/tls.key
+      plugins.security.ssl.transport.pemtrustedcas_filepath: tls/ca.crt
+      plugins.security.ssl.http.enabled: true
+      plugins.security.ssl.http.pemcert_filepath: tls/tls.crt
+      plugins.security.ssl.http.pemkey_filepath: tls/tls.key
+      plugins.security.ssl.http.pemtrustedcas_filepath: tls/ca.crt
+      plugins.security.ssl.http.clientauth_mode: OPTIONAL
+      plugins.security.nodes_dn:
+        - CN=onyx-opensearch-node,O=XLSMART
+      plugins.security.authcz.admin_dn:
+        - CN=onyx-opensearch-admin,O=XLSMART
+      plugins.security.allow_unsafe_democertificates: false
+      plugins.security.allow_default_init_securityindex: false

@@ -31,6 +31,7 @@ export async function getAuthTypeMetadataSS(): Promise<AuthTypeMetadata> {
     has_users: boolean;
     oauth_enabled: boolean;
     password_auth_enabled?: boolean;
+    invite_only_enabled?: boolean;
     sso_providers?: {
       name: string;
       display_name: string;
@@ -56,6 +57,7 @@ export async function getAuthTypeMetadataSS(): Promise<AuthTypeMetadata> {
     hasUsers: data.has_users,
     oauthEnabled: data.oauth_enabled,
     passwordAuthEnabled: data.password_auth_enabled ?? true,
+    inviteOnlyEnabled: data.invite_only_enabled ?? false,
     ssoProviders: (data.sso_providers ?? []).map((provider) => ({
       name: provider.name,
       displayName: provider.display_name,
