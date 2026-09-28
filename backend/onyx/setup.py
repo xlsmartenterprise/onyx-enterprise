@@ -51,10 +51,14 @@ from onyx.db.llm import (
     fetch_embedding_provider,
     fetch_existing_llm_provider,
     update_default_provider,
-    upsert_cloud_embedding_provider,
     upsert_llm_provider,
 )
-from onyx.db.models import IndexAttempt, IndexModelStatus, LLMProvider
+from onyx.db.models import (
+    CloudEmbeddingProvider,
+    IndexAttempt,
+    IndexModelStatus,
+    LLMProvider,
+)
 from onyx.db.search_settings import (
     get_active_search_settings,
     get_all_search_settings,
@@ -89,7 +93,6 @@ from onyx.natural_language_processing.search_nlp_models import (
     clean_model_name,
     warm_up_bi_encoder,
 )
-from onyx.server.manage.embedding.models import CloudEmbeddingProviderCreationRequest
 from onyx.server.manage.llm.models import (
     LLMProviderUpsertRequest,
     ModelConfigurationUpsertRequest,
@@ -118,6 +121,7 @@ _VERTEX_CHAT_MODEL = "gemini-3.8-flash"
 
 def _seed_google_embeddings(db_session: Session, project: str) -> None:
     """Replace untouched migration settings only while no content has been indexed."""
+    google_provider = fetch_embedding_provider(db_session, EmbeddingProvider.GOOGLE)
     search_settings = get_all_search_settings(db_session)
     legacy = next(
         (row for row in search_settings if row.model_name == OLD_DEFAULT_DOCUMENT_ENCODER_MODEL),
@@ -159,7 +163,18 @@ def _seed_google_embeddings(db_session: Session, project: str) -> None:
         or check_docs_exist(db_session)
         or check_connectors_exist(db_session)
         or db_session.scalar(select(exists().select_from(IndexAttempt)))
-        or fetch_embedding_provider(db_session, EmbeddingProvider.GOOGLE) is not None
+        or (
+            google_provider is not None
+            and any(
+                value is not None
+                for value in (
+                    google_provider.api_key,
+                    google_provider.api_url,
+                    google_provider.api_version,
+                    google_provider.deployment_name,
+                )
+            )
+        )
     ):
         return
 
@@ -180,10 +195,9 @@ def _seed_google_embeddings(db_session: Session, project: str) -> None:
         if entry.name == _GOOGLE_EMBEDDING_MODEL
         and entry.embedding_precision == EmbeddingPrecision.FLOAT
     )
-    upsert_cloud_embedding_provider(
-        db_session,
-        CloudEmbeddingProviderCreationRequest(provider_type=EmbeddingProvider.GOOGLE),
-    )
+    if google_provider is None:
+        # Persist the provider and new search settings in one transaction.
+        db_session.add(CloudEmbeddingProvider(provider_type=EmbeddingProvider.GOOGLE))
     updated = SavedSearchSettings.from_db_model(primary)
     # The registry uses google/ to namespace index names; the GenAI Vertex
     # client expects the publisher's bare model ID when calling embed_content.
@@ -196,7 +210,7 @@ def _seed_google_embeddings(db_session: Session, project: str) -> None:
     updated.passage_prefix = ""
     updated.provider_type = EmbeddingProvider.GOOGLE
     db_session.delete(obsolete)
-    update_current_search_settings(db_session, updated, preserved_fields=[])
+    update_current_search_settings(db_session, updated, preserved_fields=["id"])
     logger.notice("Configured fresh search index with Google cloud embeddings.")
 
 
@@ -236,9 +250,8 @@ def seed_vertex_defaults(db_session: Session) -> None:
     if MULTI_TENANT or not project:
         return
 
-    # Both upsert APIs commit internally. A transaction lock on db_session would
-    # be released halfway through; hold a dedicated connection's session lock
-    # until search settings and the chat default have both been persisted.
+    # The LLM upsert commits internally. Hold a dedicated connection's session
+    # lock until both search settings and the chat default have been persisted.
     bind = db_session.get_bind()
     with (
         bind.engine if isinstance(bind, Connection) else bind
