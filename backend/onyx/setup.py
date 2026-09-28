@@ -117,6 +117,7 @@ logger = setup_logger()
 _VERTEX_BOOTSTRAP_LOCK = (0x4F4E5958, 0x56455254)
 _GOOGLE_EMBEDDING_MODEL = "google/gemini-embedding-001"
 _VERTEX_CHAT_MODEL = "gemini-3.8-flash"
+_VERTEX_ALTERNATE_CHAT_MODEL = "gemini-3.1-pro-preview"
 
 
 def _seed_google_embeddings(db_session: Session, project: str) -> None:
@@ -233,7 +234,10 @@ def _seed_vertex_llm(db_session: Session, project: str) -> None:
             model_configurations=[
                 ModelConfigurationUpsertRequest(
                     name=_VERTEX_CHAT_MODEL, is_visible=True
-                )
+                ),
+                ModelConfigurationUpsertRequest(
+                    name=_VERTEX_ALTERNATE_CHAT_MODEL, is_visible=True
+                ),
             ],
         ),
         db_session,

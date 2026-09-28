@@ -26,6 +26,8 @@ metadata:
   namespace: onyx
 spec:
   timeoutSec: 900
+  securityPolicy:
+    name: onyx-staging-chat-armor
   healthCheck:
     type: HTTP
     requestPath: /nginx-health
