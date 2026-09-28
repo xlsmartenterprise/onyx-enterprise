@@ -21,6 +21,7 @@ import functools
 import ssl
 
 from onyx.configs.app_configs import (
+    POSTGRES_SSL_ALLOW_LEGACY_CA,
     POSTGRES_SSLCERT,
     POSTGRES_SSLKEY,
     POSTGRES_SSLKEY_PASSWORD,
@@ -94,7 +95,7 @@ def create_pg_ssl_context() -> ssl.SSLContext | str | None:
         check_hostname = POSTGRES_SSLMODE == "verify-full"
         ca_certs = POSTGRES_SSLROOTCERT
 
-    return build_ssl_context(
+    context = build_ssl_context(
         verify_mode=verify_mode,
         check_hostname=check_hostname,
         ca_certs=ca_certs,
@@ -102,3 +103,8 @@ def create_pg_ssl_context() -> ssl.SSLContext | str | None:
         keyfile=POSTGRES_SSLKEY,
         key_password=POSTGRES_SSLKEY_PASSWORD,
     )
+    if verify_mode == ssl.CERT_REQUIRED and POSTGRES_SSL_ALLOW_LEGACY_CA:
+        # Cloud SQL's legacy self-signed CA has no AKI; Python 3.13's strict
+        # X.509 flag rejects it. Keep chain verification against the pinned CA.
+        context.verify_flags &= ~ssl.VERIFY_X509_STRICT
+    return context

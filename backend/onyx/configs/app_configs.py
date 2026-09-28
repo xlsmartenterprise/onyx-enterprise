@@ -779,6 +779,12 @@ POSTGRES_SSLMODE: str | None = os.environ.get("POSTGRES_SSLMODE") or None
 # server certs don't chain to a system-trusted CA; point it at the system bundle
 # if the server uses a publicly-trusted certificate.
 POSTGRES_SSLROOTCERT: str | None = os.environ.get("POSTGRES_SSLROOTCERT") or None
+# Python 3.13 enables strict X.509 checks by default; Cloud SQL's legacy
+# per-instance CA has no authority key identifier. Opt in only for that CA,
+# retaining CERT_REQUIRED and the pinned CA bundle for asyncpg connections.
+POSTGRES_SSL_ALLOW_LEGACY_CA = (
+    os.environ.get("POSTGRES_SSL_ALLOW_LEGACY_CA", "false").lower() == "true"
+)
 # Client certificate + key for mutual TLS (the server authenticating us). Both
 # must be set together, and are only used when POSTGRES_SSLMODE negotiates SSL
 # (require / verify-ca / verify-full).

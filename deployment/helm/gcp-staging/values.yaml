@@ -191,6 +191,9 @@ configMap:
   AUTH_TYPE: basic
   # No DEV_MODE / test login; USER_AUTH_SECRET comes from Secret Manager.
   POSTGRES_DB: onyx
+  # The Cloud SQL per-instance CA lacks AKI; Python 3.13 strict X.509 rejects
+  # it. asyncpg still requires TLS and validates against the pinned CA.
+  POSTGRES_SSL_ALLOW_LEGACY_CA: "true"
   DISABLE_MODEL_SERVER: "true"
   VERTEXAI_DEFAULT_PROJECT: internal-tech-tools-enterprise
   VERTEXAI_DEFAULT_LOCATION: global

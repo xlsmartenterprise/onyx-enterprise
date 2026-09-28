@@ -19,6 +19,7 @@ _CA_BUNDLE = certifi.where()
 _SSL_ENV_VARS = (
     "POSTGRES_SSLMODE",
     "POSTGRES_SSLROOTCERT",
+    "POSTGRES_SSL_ALLOW_LEGACY_CA",
     "POSTGRES_SSLCERT",
     "POSTGRES_SSLKEY",
     "POSTGRES_SSLKEY_PASSWORD",
@@ -168,6 +169,36 @@ def test_asyncpg_verify_ca_verifies_cert_not_hostname() -> None:
         assert ctx.check_hostname is False
         assert ctx.verify_mode == ssl.CERT_REQUIRED
         assert ctx.get_ca_certs(), "CA bundle should be loaded for verification"
+
+
+def test_asyncpg_legacy_cloud_sql_ca_remains_verified_without_strict_x509() -> None:
+    with patch.dict(os.environ, {}, clear=False):
+        _clear_ssl_env()
+        os.environ["POSTGRES_SSLMODE"] = "verify-ca"
+        os.environ["POSTGRES_SSLROOTCERT"] = _CA_BUNDLE
+        os.environ["POSTGRES_SSL_ALLOW_LEGACY_CA"] = "true"
+        module = _reload_pg_ssl()
+        ctx = module.create_pg_ssl_context()
+        assert isinstance(ctx, ssl.SSLContext)
+        assert not ctx.verify_flags & ssl.VERIFY_X509_STRICT
+        assert ctx.verify_mode == ssl.CERT_REQUIRED
+        assert ctx.check_hostname is False
+        assert ctx.get_ca_certs()
+
+
+def test_asyncpg_strict_x509_default_remains_unchanged() -> None:
+    with patch.dict(os.environ, {}, clear=False):
+        _clear_ssl_env()
+        os.environ["POSTGRES_SSLMODE"] = "verify-full"
+        os.environ["POSTGRES_SSLROOTCERT"] = _CA_BUNDLE
+        module = _reload_pg_ssl()
+        ctx = module.create_pg_ssl_context()
+        assert isinstance(ctx, ssl.SSLContext)
+        assert ctx.verify_flags & ssl.VERIFY_X509_STRICT == (
+            ssl.create_default_context().verify_flags & ssl.VERIFY_X509_STRICT
+        )
+        assert ctx.verify_mode == ssl.CERT_REQUIRED
+        assert ctx.check_hostname is True
 
 
 def test_asyncpg_verify_full_verifies_cert_and_hostname() -> None:
