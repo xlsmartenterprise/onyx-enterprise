@@ -231,6 +231,16 @@ export function WebSearchSetupModal({ state }: WebSearchSetupModalProps) {
                 }
                 onClose={onClose}
               />
+              {category === "search" && providerType === "vertex_ai" && (
+                <Modal.Body>
+                  <p className="text-sm text-text-600">
+                    Uses Google Search grounding with Gemini Flash on Vertex AI.
+                    The server must have Workload Identity credentials and a
+                    configured Vertex project in the global location. No API key
+                    is needed.
+                  </p>
+                </Modal.Body>
+              )}
               {!hasNoFields && (
                 <Modal.Body>
                   {requiresApiKey && (

@@ -10,6 +10,7 @@ import { openDocument } from "@/lib/search/utils";
 import { SubQuestionDetail } from "@/app/app/interfaces";
 import { ValidSources } from "@/lib/types";
 import { Card } from "@/components/ui/card";
+import { GoogleSearchSuggestions } from "@/lib/webSearch/GoogleSearchSuggestions";
 
 export const buildDocumentSummaryDisplay = (
   matchHighlights: string[],
@@ -184,6 +185,11 @@ export function CompactDocumentCard({
             </Text>
           )}
       </button>
+      {document.metadata?.google_search_suggestions_html && (
+        <GoogleSearchSuggestions
+          html={document.metadata.google_search_suggestions_html}
+        />
+      )}
     </Card>
   );
 }

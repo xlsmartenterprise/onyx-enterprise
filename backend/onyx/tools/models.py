@@ -312,6 +312,8 @@ class LlmWebSearchResult(BaseCiteableToolResult):
     url: str
     title: str
     snippet: str
+    # Google Search Suggestions markup returned by Vertex grounding, when present.
+    search_suggestions_html: str | None = None
 
 
 class LlmOpenUrlResult(BaseCiteableToolResult):

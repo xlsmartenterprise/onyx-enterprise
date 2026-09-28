@@ -40,6 +40,7 @@ from onyx.tools.tool_implementations.web_search.models import (
 from onyx.tools.tool_implementations.web_search.providers import (
     build_content_provider_from_config,
     build_search_provider_from_config,
+    provider_requires_api_key,
 )
 from onyx.tools.tool_implementations.web_search.utils import (
     filter_web_search_results_with_no_title_or_snippet,
@@ -79,7 +80,13 @@ def _get_active_search_provider(
         ),
     )
 
-    if provider_model.api_key is None:
+    provider_type = provider_view.provider_type
+    api_key = (
+        provider_model.api_key.get_value(apply_mask=False)
+        if provider_model.api_key
+        else None
+    )
+    if provider_requires_api_key(provider_type) and not api_key:
         raise OnyxError(
             OnyxErrorCode.INVALID_INPUT,
             "Web search provider requires an API key. Please configure one in "
@@ -88,8 +95,8 @@ def _get_active_search_provider(
 
     try:
         provider: WebSearchProvider = build_search_provider_from_config(
-            provider_type=provider_view.provider_type,
-            api_key=provider_model.api_key.get_value(apply_mask=False),
+            provider_type=provider_type,
+            api_key=api_key,
             config=provider_model.config or {},
         )
     except ValueError as exc:
@@ -182,6 +189,7 @@ def _run_web_search(
                 url=search_result.link,
                 title=search_result.title,
                 snippet=search_result.snippet or "",
+                search_suggestions_html=search_result.search_suggestions_html,
                 unique_identifier_to_strip_away=search_result.link,
             )
             for search_result in trimmed_results

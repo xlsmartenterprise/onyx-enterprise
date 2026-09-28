@@ -32,7 +32,7 @@ class ReasoningEffort(str, Enum):
     - OpenAI: Uses "low", "medium", "high" directly for reasoning_effort. Recently added "none" for 5 series
               which is like "minimal"
     - Claude: Uses budget_tokens with different values for each level
-    - Gemini: Uses "none", "low", "medium", "high" for thinking_budget (via litellm mapping)
+    - Gemini: LiteLLM maps effort to thinking_level for Gemini 3+ and thinking_budget for older models
     """
 
     AUTO = "auto"

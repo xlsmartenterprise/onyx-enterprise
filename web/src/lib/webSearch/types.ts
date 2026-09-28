@@ -11,6 +11,7 @@ export type WebSearchMessageKey = Parameters<WebSearchTranslate>[0];
 
 export type WebSearchProviderType =
   | "google_pse"
+  | "vertex_ai"
   | "serper"
   | "exa"
   | "searxng"

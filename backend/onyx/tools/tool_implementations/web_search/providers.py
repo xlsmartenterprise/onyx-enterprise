@@ -26,6 +26,9 @@ from onyx.tools.tool_implementations.web_search.clients.serper_client import (
 from onyx.tools.tool_implementations.web_search.clients.tavily_client import (
     TavilyClient,
 )
+from onyx.tools.tool_implementations.web_search.clients.vertex_ai_client import (
+    VertexAISearchClient,
+)
 from onyx.tools.tool_implementations.web_search.models import (
     DEFAULT_MAX_RESULTS,
     WebContentProviderConfig,
@@ -60,11 +63,11 @@ def _parse_positive_int_config(
 
 
 def provider_requires_api_key(provider_type: WebSearchProviderType) -> bool:
-    """Return True if the given provider type requires an API key.
-    This list is most likely just going to contain SEARXNG. The way it works is that it uses public search engines that do not
-    require an API key. You can also set it up in a way which requires a key but SearXNG itself does not require a key.
-    """
-    return provider_type != WebSearchProviderType.SEARXNG
+    """Only hosted API-key providers need credentials; SearXNG and Vertex use other auth."""
+    return provider_type not in (
+        WebSearchProviderType.SEARXNG,
+        WebSearchProviderType.VERTEX_AI,
+    )
 
 
 def build_search_provider_from_config(
@@ -74,6 +77,13 @@ def build_search_provider_from_config(
 ) -> WebSearchProvider:
     config = config or {}
     num_results = int(config.get("num_results") or DEFAULT_MAX_RESULTS)
+
+    if provider_type == WebSearchProviderType.VERTEX_AI:
+        # Credentials/project/location come exclusively from the server environment.
+        # Do not accept admin-supplied endpoints, credentials or Vertex project IDs.
+        if config:
+            raise ValueError("Vertex AI search does not accept provider configuration.")
+        return VertexAISearchClient()
 
     # SearXNG does not require an API key
     if provider_type == WebSearchProviderType.SEARXNG:

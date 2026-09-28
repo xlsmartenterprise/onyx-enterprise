@@ -2,6 +2,7 @@ from abc import abstractmethod
 from collections.abc import Sequence
 from datetime import datetime
 from enum import Enum
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, field_validator
 
@@ -26,12 +27,23 @@ class WebSearchResult(BaseModel):
     title: str
     link: str
     snippet: str
+    # Google Search Suggestions markup accompanies a grounded response.
+    search_suggestions_html: str | None = None
     author: str | None = None
     published_date: datetime | None = None
 
     @field_validator("link")
     @classmethod
     def normalize_link(cls, v: str) -> str:
+        # Vertex grounding links are signed Google redirects; stripping their query
+        # parameters can make source citations point to an invalid redirect.
+        parsed = urlparse(v)
+        if (
+            parsed.scheme == "https"
+            and parsed.hostname == "vertexaisearch.cloud.google.com"
+            and parsed.path.startswith("/grounding-api-redirect/")
+        ):
+            return v
         return normalize_url(v)
 
 

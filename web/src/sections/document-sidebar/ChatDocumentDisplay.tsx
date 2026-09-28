@@ -11,6 +11,7 @@ import { ValidSources } from "@/lib/types";
 import { cn } from "@opal/utils";
 import Truncated from "@/refresh-components/texts/Truncated";
 import Text from "@/refresh-components/texts/Text";
+import { GoogleSearchSuggestions } from "@/lib/webSearch/GoogleSearchSuggestions";
 
 interface DocumentMetadataBlockProps {
   modal?: boolean;
@@ -22,7 +23,9 @@ function DocumentMetadataBlock({
   document,
 }: DocumentMetadataBlockProps) {
   const MAX_METADATA_ITEMS = 3;
-  const metadataEntries = Object.entries(document.metadata);
+  const metadataEntries = Object.entries(document.metadata).filter(
+    ([key]) => key !== "google_search_suggestions_html"
+  );
 
   return (
     <div className="flex items-center overflow-hidden">
@@ -76,35 +79,45 @@ export default function ChatDocumentDisplay({
   }
 
   const hasMetadata =
-    document.updated_at || Object.keys(document.metadata).length > 0;
+    document.updated_at ||
+    Object.keys(document.metadata).some(
+      (key) => key !== "google_search_suggestions_html"
+    );
 
   return (
-    <button
-      type="button"
-      onClick={() => openDocument(document, setPresentingDocument)}
-      className={cn(
-        "flex w-full flex-col p-3 gap-2 rounded-12 hover:bg-background-tint-00 cursor-pointer text-start",
-        isSelected && "bg-action-selection-02"
-      )}
-    >
-      <div className="flex items-center gap-2">
-        {document.is_internet || document.source_type === ValidSources.Web ? (
-          <WebResultIcon url={document.link} />
-        ) : (
-          <SourceIcon sourceType={document.source_type} iconSize={18} />
+    <div>
+      <button
+        type="button"
+        onClick={() => openDocument(document, setPresentingDocument)}
+        className={cn(
+          "flex w-full flex-col p-3 gap-2 rounded-12 hover:bg-background-tint-00 cursor-pointer text-start",
+          isSelected && "bg-action-selection-02"
         )}
-        <Truncated className="line-clamp-2" side="left">
-          {title}
-        </Truncated>
-      </div>
+      >
+        <div className="flex items-center gap-2">
+          {document.is_internet || document.source_type === ValidSources.Web ? (
+            <WebResultIcon url={document.link} />
+          ) : (
+            <SourceIcon sourceType={document.source_type} iconSize={18} />
+          )}
+          <Truncated className="line-clamp-2" side="left">
+            {title}
+          </Truncated>
+        </div>
 
-      {hasMetadata && (
-        <DocumentMetadataBlock modal={modal} document={document} />
+        {hasMetadata && (
+          <DocumentMetadataBlock modal={modal} document={document} />
+        )}
+
+        <Text as="p" className="line-clamp-2 text-start" secondaryBody text03>
+          {buildDocumentSummaryDisplay(document.match_highlights, document.blurb)}
+        </Text>
+      </button>
+      {document.metadata?.google_search_suggestions_html && (
+        <GoogleSearchSuggestions
+          html={document.metadata.google_search_suggestions_html}
+        />
       )}
-
-      <Text as="p" className="line-clamp-2 text-start" secondaryBody text03>
-        {buildDocumentSummaryDisplay(document.match_highlights, document.blurb)}
-      </Text>
-    </button>
+    </div>
   );
 }

@@ -306,6 +306,17 @@ def test_anthropic_identity_is_always_thinking(
     assert anthropic_identity_is_always_thinking(model_names) is always_on
 
 
+@pytest.mark.parametrize("model_name", ["gemini-3.8-flash", "gemini-3.1-pro-preview"])
+def test_vertex_gemini_3_models_offer_only_supported_thinking_levels(
+    model_name: str,
+) -> None:
+    assert supported_reasoning_efforts(LlmProviderNames.VERTEX_AI, [model_name], None) == [
+        ReasoningEffort.LOW,
+        ReasoningEffort.MEDIUM,
+        ReasoningEffort.HIGH,
+    ]
+
+
 @pytest.mark.parametrize("model_name", ["claude-fable-5", "claude-mythos-5-1"])
 def test_always_thinking_models_offer_no_off(model_name: str) -> None:
     """Off would promise a saving these models never honor: they reject

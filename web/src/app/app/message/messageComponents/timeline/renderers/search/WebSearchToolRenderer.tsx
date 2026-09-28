@@ -15,6 +15,7 @@ import {
   QUERIES_PER_EXPANSION,
 } from "./searchStateUtils";
 import Text from "@/refresh-components/texts/Text";
+import { GoogleSearchSuggestions } from "@/lib/webSearch/GoogleSearchSuggestions";
 
 const queryToSourceInfo = (query: string, index: number): SourceInfo => ({
   id: `query-${index}`,
@@ -45,6 +46,12 @@ export const WebSearchToolRenderer: MessageRenderer<SearchToolPacket, {}> = ({
   const t = useTranslations("chat.messages.timeline");
   const searchState = constructCurrentSearchState(packets);
   const { queries } = searchState;
+  const suggestions = searchState.results
+    .map((doc) => doc.metadata?.google_search_suggestions_html)
+    .filter((html): html is string => Boolean(html));
+  const suggestionsDisplay = suggestions.map((html, index) => (
+    <GoogleSearchSuggestions key={index} html={html} />
+  ));
 
   const isHighlight = renderType === RenderType.HIGHLIGHT;
   const isInline = renderType === RenderType.INLINE;
@@ -86,6 +93,7 @@ export const WebSearchToolRenderer: MessageRenderer<SearchToolPacket, {}> = ({
               showDetailsCard={false}
               isQuery={true}
             />
+            {suggestionsDisplay}
           </div>
         ),
       },
@@ -101,16 +109,19 @@ export const WebSearchToolRenderer: MessageRenderer<SearchToolPacket, {}> = ({
         supportsCollapsible: false,
         timelineLayout: "content",
         content: (
-          <SearchChipList
-            items={queries}
-            initialCount={INITIAL_QUERIES_TO_SHOW}
-            expansionCount={QUERIES_PER_EXPANSION}
-            getKey={(_, index) => index}
-            toSourceInfo={queryToSourceInfo}
-            emptyState={!stopPacketSeen ? <BlinkingBar /> : undefined}
-            showDetailsCard={false}
-            isQuery={true}
-          />
+          <div className="flex flex-col">
+            <SearchChipList
+              items={queries}
+              initialCount={INITIAL_QUERIES_TO_SHOW}
+              expansionCount={QUERIES_PER_EXPANSION}
+              getKey={(_, index) => index}
+              toSourceInfo={queryToSourceInfo}
+              emptyState={!stopPacketSeen ? <BlinkingBar /> : undefined}
+              showDetailsCard={false}
+              isQuery={true}
+            />
+            {suggestionsDisplay}
+          </div>
         ),
       },
     ]);
@@ -122,16 +133,19 @@ export const WebSearchToolRenderer: MessageRenderer<SearchToolPacket, {}> = ({
       icon: SvgGlobe,
       status: queriesHeader,
       content: (
-        <SearchChipList
-          items={queries}
-          initialCount={INITIAL_QUERIES_TO_SHOW}
-          expansionCount={QUERIES_PER_EXPANSION}
-          getKey={(_, index) => index}
-          toSourceInfo={queryToSourceInfo}
-          emptyState={!stopPacketSeen ? <BlinkingBar /> : undefined}
-          showDetailsCard={false}
-          isQuery={true}
-        />
+        <div className="flex flex-col">
+          <SearchChipList
+            items={queries}
+            initialCount={INITIAL_QUERIES_TO_SHOW}
+            expansionCount={QUERIES_PER_EXPANSION}
+            getKey={(_, index) => index}
+            toSourceInfo={queryToSourceInfo}
+            emptyState={!stopPacketSeen ? <BlinkingBar /> : undefined}
+            showDetailsCard={false}
+            isQuery={true}
+          />
+          {suggestionsDisplay}
+        </div>
       ),
       supportsCollapsible: false,
       timelineLayout: "timeline",

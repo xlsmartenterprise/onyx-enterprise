@@ -698,6 +698,37 @@ def _anthropic_completion_kwargs(
         return mock_completion.call_args.kwargs
 
 
+@pytest.mark.parametrize("model_name", ["gemini-3.8-flash", "gemini-3.1-pro-preview"])
+@pytest.mark.parametrize(
+    "requested, expected",
+    [
+        (ReasoningEffort.OFF, "low"),
+        (ReasoningEffort.LOW, "low"),
+        (ReasoningEffort.MEDIUM, "medium"),
+        (ReasoningEffort.HIGH, "high"),
+    ],
+)
+def test_vertex_gemini_thinking_effort_reaches_litellm(
+    model_name: str, requested: ReasoningEffort, expected: str
+) -> None:
+    llm = LitellmLLM(
+        api_key="test_key",
+        timeout=30,
+        model_provider=LlmProviderNames.VERTEX_AI,
+        model_name=model_name,
+        max_input_tokens=32768,
+    )
+    with (
+        patch("litellm.completion") as mock_completion,
+        patch("onyx.llm.multi_llm.model_is_reasoning_model", return_value=False),
+    ):
+        mock_completion.return_value = []
+        list(llm.stream([UserMessage(content="Hi")], reasoning_effort=requested))
+        kwargs = mock_completion.call_args.kwargs
+        assert kwargs["model"] == f"vertex_ai/{model_name}"
+        assert kwargs["reasoning_effort"] == expected
+
+
 def test_keeps_temperature_for_other_models(default_multi_llm: LitellmLLM) -> None:
     with patch("litellm.completion") as mock_completion:
         mock_completion.return_value = []

@@ -323,6 +323,20 @@ class WebSearchTool(Tool[WebSearchToolOverrideKwargs]):
         search_docs = convert_inference_sections_to_search_docs(
             inference_sections, is_internet=True
         )
+        # Search Suggestions are presentation-only: keep Google's HTML in the
+        # source cards, not in the LLM prompt assembled from inference sections.
+        # Attach all query suggestions to the first document even if deduplication
+        # removed the first chunk of a later query.
+        suggestions = dict.fromkeys(
+            result.search_suggestions_html
+            for result_set in valid_results
+            for result in result_set
+            if result.search_suggestions_html
+        )
+        if suggestions:
+            search_docs[0].metadata["google_search_suggestions_html"] = "".join(
+                suggestions
+            )
 
         # Emit documents
         self.emitter.emit(

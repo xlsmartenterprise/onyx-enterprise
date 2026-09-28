@@ -734,6 +734,21 @@ _XHIGH_REASONING_STYLES = frozenset(
 )
 
 
+def vertex_gemini_always_thinks(
+    model_provider: str, model_names: Sequence[str]
+) -> bool:
+    """These Vertex Gemini 3 models accept LOW/MEDIUM/HIGH, but not OFF.
+
+    The deployment name, if present, is the one sent to LiteLLM.
+    """
+    if model_provider != LlmProviderNames.VERTEX_AI or not model_names:
+        return False
+    return model_names[-1].lower().split("/")[-1] in {
+        "gemini-3.8-flash",
+        "gemini-3.1-pro-preview",
+    }
+
+
 def supported_reasoning_efforts(
     model_provider: str,
     model_names: Sequence[str],
@@ -761,9 +776,11 @@ def supported_reasoning_efforts(
         return []
 
     style = resolve_reasoning_param_style(model_provider, model_names, api_surface)
-    # A model that always thinks honors no off on any route, gateway included,
-    # so offering the level would promise a saving that never arrives.
-    always_thinking = anthropic_identity_is_always_thinking(model_names)
+    # Gemini 3.8 Flash and 3.1 Pro Preview reject disabling thinking. Keep
+    # their slider floor consistent with the request builder's OFF fallback.
+    always_thinking = anthropic_identity_is_always_thinking(
+        model_names
+    ) or vertex_gemini_always_thinks(model_provider, model_names)
     efforts = [] if always_thinking else [ReasoningEffort.OFF]
     efforts += [ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH]
     if style in _XHIGH_REASONING_STYLES:

@@ -52,6 +52,11 @@ export const SEARCH_PROVIDER_DETAILS: Record<
     logo: SvgGoogle,
     apiKeyUrl: "https://programmablesearchengine.google.com/controlpanel/all",
   },
+  vertex_ai: {
+    label: "Vertex AI Google Search",
+    subtitle: "Google Search grounding · Workload Identity",
+    logo: SvgGoogle,
+  },
   searxng: {
     label: "SearXNG",
     subtitle: "SearXNG",
@@ -112,6 +117,7 @@ const SEARCH_PROVIDER_CAPABILITIES: Record<
       search_engine_id: ["search_engine_id", "cx", "search_engine"],
     },
   },
+  vertex_ai: { requiresApiKey: false, requiredConfigKeys: [] },
   searxng: {
     requiresApiKey: false,
     requiredConfigKeys: ["searxng_base_url"],

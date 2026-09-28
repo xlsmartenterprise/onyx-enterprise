@@ -54,6 +54,7 @@ from onyx.llm.model_capabilities import (
     openai_chat_variant_rejects_reasoning,
     openai_model_rejects_reasoning_effort,
     resolve_reasoning_param_style,
+    vertex_gemini_always_thinks,
 )
 from onyx.llm.model_capabilities import (
     model_identity_names as resolve_model_identity_names,
@@ -672,6 +673,9 @@ class LitellmLLM(LLM):
         is_reasoning = (
             uses_adaptive_thinking
             or model_supports_anthropic_thinking
+            or vertex_gemini_always_thinks(
+                self.config.model_provider, model_identity_names
+            )
             or any(
                 model_is_reasoning_model(name, self.config.model_provider)
                 for name in model_identity_names
@@ -811,20 +815,23 @@ class LitellmLLM(LLM):
             self._api_surface,
         )
 
-        # Fable and Mythos never stop thinking, so off there means the least
-        # reasoning they take rather than the API's own default.
-        if (
-            reasoning_effort is ReasoningEffort.OFF
-            and reasoning_style is ReasoningParamStyle.ANTHROPIC_ADAPTIVE
-            and anthropic_identity_is_always_thinking(model_identity_names)
+        # An OFF override can outlive a model switch (or come from a user's
+        # default). Always-thinking models cannot honor it: choose their lowest
+        # supported level instead of silently using the provider's default.
+        if reasoning_effort is ReasoningEffort.OFF and (
+            (
+                reasoning_style is ReasoningParamStyle.ANTHROPIC_ADAPTIVE
+                and anthropic_identity_is_always_thinking(model_identity_names)
+            )
+            or vertex_gemini_always_thinks(
+                self.config.model_provider, model_identity_names
+            )
         ):
             reasoning_effort = ReasoningEffort.LOW
-
-        # Note, there is a reasoning_effort parameter in LiteLLM but it is completely jank and does not work for any
-        # of the major providers. Not setting it sets it to OFF.
+        # Use explicit provider-native params for OpenAI and Anthropic. For
+        # Vertex Gemini, LiteLLM maps reasoning_effort to thinkingLevel.
         if (
             is_reasoning
-            # The default of this parameter not set is surprisingly not the equivalent of an Auto but is actually Off
             and reasoning_effort != ReasoningEffort.OFF
             and not any(
                 openai_model_rejects_reasoning_effort(name)
