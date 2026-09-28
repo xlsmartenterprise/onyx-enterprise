@@ -1,0 +1,5 @@
+# Copy this file to state-backend.tf ONLY after the bucket is created.
+# Then run terraform init -migrate-state with the bucket/prefix in README.md.
+terraform {
+  backend "gcs" {}
+}

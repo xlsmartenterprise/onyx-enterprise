@@ -1,0 +1,34 @@
+# Submit the current reviewed checkout with _REGISTRY and _TAG set to the
+# target Artifact Registry repository and immutable Git commit SHA.
+# All three images are published only after every build step succeeds.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: web
+    args:
+      - build
+      - --file=web/Dockerfile
+      - --build-arg=NEXT_PUBLIC_APP_NAME=XLSMART Enterprise
+      - --tag=${_REGISTRY}/web-server:${_TAG}
+      - web
+  - name: gcr.io/cloud-builders/docker
+    id: backend
+    args:
+      - build
+      - --file=backend/Dockerfile
+      - --tag=${_REGISTRY}/backend:${_TAG}
+      - backend
+  - name: gcr.io/cloud-builders/docker
+    id: models
+    args:
+      - build
+      - --file=backend/Dockerfile.model_server
+      - --tag=${_REGISTRY}/model-server:${_TAG}
+      - backend
+images:
+  - ${_REGISTRY}/web-server:${_TAG}
+  - ${_REGISTRY}/backend:${_TAG}
+  - ${_REGISTRY}/model-server:${_TAG}
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 200
+  logging: CLOUD_LOGGING_ONLY

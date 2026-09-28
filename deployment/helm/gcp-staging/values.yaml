@@ -1,0 +1,252 @@
+# Helm chart 0.8.28, release onyx, namespace onyx. Infrastructure-specific
+# hosts/bucket/GSA and three branded image digests are required at install time;
+# see README.md. This file intentionally contains no credentials or mutable tags.
+# Do not merge with values-lite.yaml or values-ci.yaml.
+
+global:
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: onyx-runtime
+  # Set serviceAccount.annotations.iam\.gke\.io/gcp-service-account with
+  # --set-string at install time (runtime_gsa_email Terraform output).
+
+postgresql:
+  enabled: false
+postgresqlOperator:
+  enabled: false
+redis:
+  enabled: false
+redisOperator:
+  enabled: false
+minio:
+  enabled: false
+
+# Cloud SQL's server CA is fetched and installed as a ConfigMap BEFORE the app.
+# verify-ca checks the server chain even when the private host is an IP address.
+postgresTls:
+  enabled: true
+  sslMode: verify-ca
+  caConfigMapName: onyx-cloudsql-ca
+  caKey: ca.crt
+
+# Memorystore's unique per-instance CA(s) must be installed BEFORE the app;
+# hostname validation remains ON. Do not silently downgrade TLS verification.
+redisTls:
+  enabled: true
+  caConfigMapName: onyx-redis-ca
+  caKey: ca.crt
+  checkHostname: true
+
+vectorDB:
+  enabled: true
+opensearch:
+  enabled: true
+  singleNode: false
+  replicas: 3
+  clusterName: onyx-opensearch
+  nodeGroup: master
+  masterService: onyx-opensearch-master
+  antiAffinity: hard
+  antiAffinityTopologyKey: topology.kubernetes.io/zone
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: opensearch
+          app.kubernetes.io/instance: onyx
+  persistence:
+    enabled: true
+    storageClass: premium-rwo
+    size: 100Gi
+  # The app's OpenSearch admin secret and the subchart bootstrap secret agree.
+  extraEnvs:
+    - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: onyx-opensearch
+          key: opensearch_admin_password
+
+# Do not provision an external LoadBalancer (the chart otherwise defaults to
+# publicly reachable TCP/80). Loopback port-forward is the only default access.
+ingress:
+  enabled: false
+letsencrypt:
+  enabled: false
+nginx:
+  enabled: true
+  controller:
+    replicaCount: 2
+    # Only in-cluster traffic, forwarded to loopback for test access.
+    service:
+      type: ClusterIP
+
+api:
+  replicaCount: 2
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: api-server
+          topologyKey: topology.kubernetes.io/zone
+  readinessProbe:
+    httpGet:
+      path: /health/ready
+      port: api-server-port
+    initialDelaySeconds: 20
+    periodSeconds: 15
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: api-server-port
+    initialDelaySeconds: 60
+    periodSeconds: 30
+webserver:
+  replicaCount: 2
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: web-server
+          topologyKey: topology.kubernetes.io/zone
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    periodSeconds: 15
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    periodSeconds: 30
+
+# Full indexing/search path: model serving, beat, all connector/indexing workers.
+inferenceCapability:
+  replicaCount: 2
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: inference-model-server
+          topologyKey: topology.kubernetes.io/zone
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: model-server
+    periodSeconds: 15
+indexCapability:
+  replicaCount: 2
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: indexing-model-server
+          topologyKey: topology.kubernetes.io/zone
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: model-server
+    periodSeconds: 15
+celery_beat:
+  replicaCount: 1
+celery_worker_primary:
+  replicaCount: 1
+celery_worker_light:
+  replicaCount: 1
+celery_worker_heavy:
+  replicaCount: 1
+celery_worker_docfetching:
+  replicaCount: 1
+celery_worker_docprocessing:
+  replicaCount: 1
+celery_worker_user_file_processing:
+  replicaCount: 1
+celery_worker_monitoring:
+  replicaCount: 1
+celery_worker_scheduled_tasks:
+  replicaCount: 1
+# Slack needs a real bot token. The core login, connector and search paths do not.
+slackbot:
+  enabled: false
+# Code interpreter and Craft need separate sandbox/image security review.
+codeInterpreter:
+  enabled: false
+sandboxImagePrepull:
+  enabled: false
+
+# Individual ESO ExternalSecrets live in external-secrets.yaml, not in Helm;
+# the chart's single-blob externalSecret mechanism is intentionally disabled.
+externalSecret:
+  enabled: false
+auth:
+  postgresql:
+    enabled: true
+    existingSecret: onyx-postgresql
+    secretKeys:
+      POSTGRES_USER: username
+      POSTGRES_PASSWORD: password
+  redis:
+    enabled: true
+    existingSecret: onyx-redis
+    secretKeys:
+      REDIS_PASSWORD: redis_password
+  objectstorage:
+    enabled: false
+  opensearch:
+    enabled: true
+    existingSecret: onyx-opensearch
+    secretKeys:
+      OPENSEARCH_ADMIN_USERNAME: opensearch_admin_username
+      OPENSEARCH_ADMIN_PASSWORD: opensearch_admin_password
+  userauth:
+    enabled: true
+    existingSecret: onyx-userauth
+    secretKeys:
+      USER_AUTH_SECRET: user_auth_secret
+
+configMap:
+  AUTH_TYPE: basic
+  # No DEV_MODE / test login; USER_AUTH_SECRET comes from Secret Manager.
+  POSTGRES_DB: onyx
+  POSTGRES_PORT: "5432"
+  FILE_STORE_BACKEND: gcs
+  # GCS_FILE_STORE_BUCKET_NAME, GCS_PROJECT_ID and private POSTGRES_HOST,
+  # REDIS_HOST/REDIS_PORT come from Terraform outputs at install time.
+  # The chart emits a default false retrieval flag; ONYX_DISABLE_VESPA
+  # forces OpenSearch retrieval on for a fresh install (no Vespa index).
+  ONYX_DISABLE_VESPA: "true"
+  # HTTPS public URLs require independently prepared DNS + certificate + ingress.
+  WEB_DOMAIN: http://localhost:8080
+  DOMAIN: localhost
+  ENABLE_CRAFT: "false"
+
+# The OpenSearch subchart already emits a PDB with maxUnavailable=1.
+# Add disruption budgets only for app replicas, not a second matching PDB.
+extraManifests:
+  - apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: onyx-api-server
+    spec:
+      minAvailable: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/instance: onyx
+          app: api-server
+  - apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: onyx-web-server
+    spec:
+      minAvailable: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/instance: onyx
+          app: web-server

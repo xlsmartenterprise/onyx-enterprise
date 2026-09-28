@@ -1,0 +1,15 @@
+#!include:.gitignore
+# Cloud Build uploads the workspace; local credentials and untracked source
+# artwork must never be sent to its source bucket.
+.git/
+.gcloud/
+.config/
+.cache/
+.assets/
+.terraform/
+deployment/terraform/
+deployment/helm/charts/onyx/charts/
+*.tfplan
+**/.env*
+**/*.pem
+**/*.key
