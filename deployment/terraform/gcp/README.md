@@ -32,7 +32,7 @@ Check `terraform output` only from a properly initialized infra backend, not fro
 
 ## Publish branded images and connect to the cluster
 
-Use a reviewed Git commit as an immutable tag. `.gcloudignore` excludes local credentials, artwork and Terraform state from the Cloud Build upload. Confirm the three Docker build contexts (`web/`, `backend/`) contain only approved source. Cloud Build's custom service account can read the dedicated source bucket, push only to the staging Artifact Registry repository, and write logs; its use requires the operator's `iam.serviceAccounts.actAs` permission. The model-server build is large; Cloud Build uses a 200Gi scratch disk. Base and dependency images are third-party: pin/digest-review and scan each published image before promotion.
+Use a reviewed Git commit as an immutable tag. `.gcloudignore` sends only the Docker source contexts (`web/`, `backend/`) and build definition; it excludes credentials, artwork, local `.next` caches and Terraform state. Cloud Build's custom service account can read the dedicated source bucket, push only to the staging Artifact Registry repository, and write logs; its use requires the operator's `iam.serviceAccounts.actAs` permission. The build requests a billable 32-vCPU worker, a 200Gi scratch disk and a two-hour deadline: the smaller 8-vCPU worker stopped internally during `next build`. Base and dependency images are third-party: pin/digest-review and scan each published image before promotion.
 
 ```sh
 REGISTRY=$(terraform -chdir=deployment/terraform/gcp/infra output -raw artifact_registry_repository)

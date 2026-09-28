@@ -1,15 +1,24 @@
 #!include:.gitignore
-# Cloud Build uploads the workspace; local credentials and untracked source
-# artwork must never be sent to its source bucket.
-.git/
-.gcloud/
-.config/
-.cache/
-.assets/
-.terraform/
-deployment/terraform/
-deployment/helm/charts/onyx/charts/
-*.tfplan
+# Upload only the two Docker contexts and this build definition. This also
+# prevents untracked credentials, Terraform state, IDE files, and artwork from
+# entering Cloud Build source archives.
+/*
+!/web/
+!/backend/
+!/deployment/
+/deployment/*
+!/deployment/helm/
+/deployment/helm/*
+!/deployment/helm/gcp-staging/
+/deployment/helm/gcp-staging/*
+!/deployment/helm/gcp-staging/cloudbuild.yaml
 **/.env*
 **/*.pem
 **/*.key
+# Match the Docker context exclusions before compressing/uploading source.
+web/.next/
+web/tests/
+web/lib/opal/dist/
+web/lib/shared/dist/
+backend/.cache/
+**/__pycache__/
