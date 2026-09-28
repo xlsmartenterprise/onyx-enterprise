@@ -71,15 +71,17 @@ resource "google_container_cluster" "onyx" {
 }
 
 resource "google_container_node_pool" "regional" {
-  project  = var.project_id
-  name     = "onyx-staging-general"
-  location = var.region
-  cluster  = google_container_cluster.onyx.name
+  project    = var.project_id
+  name       = "onyx-staging-general"
+  location   = var.region
+  cluster    = google_container_cluster.onyx.name
+  node_count = 1
 
   autoscaling {
-    # Regional min/max counts apply PER ZONE (three zones => 3 to 6 nodes).
-    min_node_count = 1
-    max_node_count = 2
+    # Explicit regional total; one node was observed with per-zone min=1 alone.
+    # BALANCED distributes the three-node floor across available zones.
+    total_min_node_count = 3
+    total_max_node_count = 6
   }
 
   management {
