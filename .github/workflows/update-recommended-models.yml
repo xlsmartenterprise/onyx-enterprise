@@ -12,8 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: update-recommended-models
@@ -21,6 +20,9 @@ concurrency:
 
 jobs:
   update-recommended-models:
+    permissions:
+      contents: write
+      pull-requests: write
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -26,6 +26,14 @@ Before merging the PR:
 4. Exercise a connector sync and a search query against the staging deployment. Confirm both work with the existing database and internal service names.
 5. Merge to `xlsmart-main` only after CI and staging smoke checks pass. Deploy from that branch; delete the temporary branch after merge.
 
+## Scheduled maintenance on the fork
+
+The three weekly workflows `update-base-image-digests.yml`, `update-vendored-skills.yml`, and `update-recommended-models.yml` check out the repository's actual default branch (`xlsmart-main` here, `main` upstream). Configure **both** the `CHERRY_PICK_APP_ID` repository variable and `CHERRY_PICK_APP_PRIVATE_KEY` secret to use a dedicated GitHub App; with no App ID they use the built-in `GITHUB_TOKEN`. Contents and Pull requests write permissions are scoped to the three updater **jobs**, while their notification jobs and the fork's default workflow token stay read-only. Creating updater PRs without an App requires the repository Actions setting **Allow GitHub Actions to create and approve pull requests**; this applies repository-wide, so review permissions and never configure automatic approval or merge. Never copy a personal OAuth token into Actions secrets.
+
+The digest updater requires `DOCKER_USERNAME` and `DOCKER_TOKEN` with **private `dhi.io` catalog access** in addition to public Docker Hub access; the fork currently has neither secret. Until both are configured, the workflow succeeds with an explicit notice and **does not refresh any digest or create a digest PR**. It never publishes only public pins while their hardened counterparts are inaccessible. If a family edits `.github/workflows/**` (currently `node`), it is also skipped when using `GITHUB_TOKEN`: configure a dedicated App with Workflows: write (plus Contents and Pull requests: write) to update that family. Do not interpret the green credential-check run as a digest update.
+
+On 29 September 2026, manual dispatches of all three workflows completed successfully on `xlsmart-main`: vendored skills had no upstream changes; the model updater opened [review PR #1](https://github.com/xlsmartenterprise/onyx-enterprise/pull/1) against `xlsmart-main`; the digest updater reported the missing Docker catalog credentials. GitHub does not start ordinary PR/push CI from events emitted by `GITHUB_TOKEN`; PR #1 had no automatic checks. Manually run relevant checks on its branch and review the generated JSON before merging, or provision the dedicated App to restore normal event-triggered CI. This does **not** supply the separate `SYNC_GITHUB_TOKEN` needed by the upstream release-sync workflow.
+
 ## Conflict or workflow failure
 
 A merge conflict stops the workflow before any sync branch is pushed. Inspect the failed job's conflicted file list. From an up-to-date local checkout, fetch both remotes and use a new branch at `origin/xlsmart-main`:
