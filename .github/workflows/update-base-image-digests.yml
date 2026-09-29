@@ -22,7 +22,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 concurrency:
   group: update-base-image-digests
@@ -34,6 +35,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Mint GitHub App installation token
+        if: vars.CHERRY_PICK_APP_ID != ''
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:
@@ -50,21 +52,41 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # ratchet:actions/checkout@v6
         with:
           persist-credentials: true
-          ref: main
-          token: ${{ steps.app-token.outputs.token }}
+          ref: ${{ github.event.repository.default_branch }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
 
-      - name: Configure git identity as App
+      - name: Configure git identity
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
         run: |
-          bot_user_id="$(gh api "/users/${APP_SLUG}[bot]" --jq .id)"
-          git config user.name "${APP_SLUG}[bot]"
-          git config user.email "${bot_user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+          if [ -n "${APP_SLUG}" ]; then
+            bot_user_id="$(gh api "/users/${APP_SLUG}[bot]" --jq .id)"
+            git config user.name "${APP_SLUG}[bot]"
+            git config user.email "${bot_user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          fi
+
+      - name: Check private registry credentials
+        id: registry-creds
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN }}
+        run: |
+          if [ -n "${DOCKER_USERNAME}" ] && [ -n "${DOCKER_TOKEN}" ]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::Digest refresh requires DOCKER_USERNAME and DOCKER_TOKEN with dhi.io access."
+            echo "Digest refresh skipped: configure DOCKER_USERNAME and DOCKER_TOKEN with dhi.io catalog access. No digests or PRs were updated." >> "${GITHUB_STEP_SUMMARY}"
+          fi
 
       # Built from source rather than the published `onyx-devtools` wheel, so a fix
       # to the refresher ships without waiting on an `ods/v*` release.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # zizmor: ignore[cache-poisoning]
+        if: steps.registry-creds.outputs.available == 'true'
         with:
           go-version-file: tools/ods/go.mod
           cache-dependency-path: tools/ods/go.sum
@@ -74,6 +96,7 @@ jobs:
       # these steps write to the Docker config.
       - name: Login to Docker Hub
         uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4
+        if: steps.registry-creds.outputs.available == 'true'
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
@@ -81,6 +104,7 @@ jobs:
       # The DHI catalog is private. Without this the refresh fails on the dhi.io
       # references rather than leaving them silently stale.
       - name: Login to Docker Hardened Images (dhi.io)
+        if: steps.registry-creds.outputs.available == 'true'
         uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4
         with:
           registry: dhi.io
@@ -91,6 +115,7 @@ jobs:
       # the run is in flight cannot leave two PRs pinning different digests.
       - name: Resolve current digests
         working-directory: tools/ods
+        if: steps.registry-creds.outputs.available == 'true'
         env:
           CACHE_FILE: ${{ runner.temp }}/digests.json
         run: |
@@ -107,10 +132,13 @@ jobs:
       # the digests move week over week, so an already-open PR should carry the
       # latest resolution rather than go stale behind a second one.
       - name: Open or update a PR per family
+        if: steps.registry-creds.outputs.available == 'true'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           CACHE_FILE: ${{ runner.temp }}/digests.json
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           if [ ! -s "${RUNNER_TEMP}/stale-families.txt" ]; then
             echo "All pinned digests are current. Nothing to do."
@@ -124,7 +152,7 @@ jobs:
           for family in "${families[@]}"; do
             [ -n "${family}" ] || continue
             branch="auto/base-image-digests/${family}"
-            git switch -C "${branch}" main
+            git switch -C "${branch}" "${BASE_BRANCH}"
 
             (cd tools/ods && go run . update-base-digests \
               --write --family "${family}" --cache-file "${CACHE_FILE}" \
@@ -132,6 +160,17 @@ jobs:
 
             if git diff --quiet; then
               echo "No change for ${family}, skipping."
+              continue
+            fi
+
+            # The built-in token cannot push edits to workflow files. Keep
+            # a family's public and private base pins together; do not silently
+            # publish a partial update when a dedicated App is unavailable.
+            if [ -z "${APP_SLUG}" ] &&
+              [ -n "$(git diff --name-only -- .github/workflows)" ]; then
+              echo "::notice::Skipping ${family}: a GitHub App with Workflows: write is needed to update workflow files."
+              echo "Skipped ${family}: workflow-file digest changes require a GitHub App with Workflows: write." >> "${GITHUB_STEP_SUMMARY}"
+              git restore --worktree -- .
               continue
             fi
 
@@ -158,14 +197,14 @@ jobs:
               echo "Refreshed existing PR #${existing_pr} via force-push."
             else
               gh pr create \
-                --base main \
+                --base "${BASE_BRANCH}" \
                 --head "${branch}" \
                 --title "${title}" \
                 --body-file "${RUNNER_TEMP}/pr-body-${family}.md"
             fi
           done
 
-          git switch --force main
+          git switch --force "${BASE_BRANCH}"
 
   notify-slack-on-failure:
     needs:
